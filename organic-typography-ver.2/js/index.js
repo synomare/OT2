@@ -161,14 +161,24 @@
                 
                 // モジュールの読み込み
                 this.modules = await moduleLoader.loadAll();
-                
+
+                // TemporalContext が存在するか確認し、なければ明示的に読み込む
+                if (typeof window !== 'undefined' && typeof window.TemporalContext === 'undefined') {
+                    console.warn('TemporalContext が見つかりません。モジュールを読み込みます...');
+                    try {
+                        await moduleLoader.loadModule('TemporalContext');
+                    } catch (error) {
+                        console.error('TemporalContext の読み込みに失敗しました:', error.message);
+                    }
+                }
+
                 // メインオーケストレーターの初期化
-                if (typeof MetaCognitiveOrchestrator !== 'undefined') {
+                if (typeof MetaCognitiveOrchestrator !== 'undefined' && typeof window !== 'undefined' && typeof window.TemporalContext !== 'undefined') {
                     this.orchestrator = new MetaCognitiveOrchestrator(text, canvasWidth, canvasHeight, config);
                     console.log('🧠 MetaCognitiveOrchestrator 初期化完了');
                 } else {
-                    console.warn('⚠ MetaCognitiveOrchestrator が利用できません。基本モードで動作します。');
-                    
+                    console.warn('⚠ MetaCognitiveOrchestrator または TemporalContext が利用できません。基本モードで動作します。');
+
                     // フォールバック：OrganicLayoutのみで動作
                     if (typeof OrganicLayout !== 'undefined') {
                         this.orchestrator = new OrganicLayout(text, canvasWidth, canvasHeight);
