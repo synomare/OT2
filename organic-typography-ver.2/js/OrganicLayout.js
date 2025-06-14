@@ -20,29 +20,47 @@ function checkDependencies() {
 
 class OrganicLayout {
     constructor(text, canvasWidth, canvasHeight) {
-        this.text = text;
-        this.canvasWidth = canvasWidth;
-        this.canvasHeight = canvasHeight;
+        // 入力値検証
+        this.text = (text && typeof text === 'string') ? text : 'デフォルトテキスト';
+        this.canvasWidth = Math.max(100, Number(canvasWidth) || 800);
+        this.canvasHeight = Math.max(100, Number(canvasHeight) || 600);
+        
         this.nodes = [];
         this.connections = [];
         this.growthQueue = [];
         this.generation = 0;
         this.isGrowing = false;
         
+        // メモリリーク対策
+        this.maxNodes = 1000;
+        this.maxConnections = 2000;
+        this.maxTrajectoryLength = 500;
+        this.maxCollocationFields = 200;
+        this.maxEmergentPatterns = 100;
+        this.maxSelfReflectionHistory = 50;
+        
         // 依存関係チェック
         this.dependenciesReady = checkDependencies();
         
         // 空間インデックスの初期化
         if (typeof SpatialIndex !== 'undefined') {
-            this.spatialIndex = new SpatialIndex(canvasWidth, canvasHeight, 50);
+            this.spatialIndex = new SpatialIndex(this.canvasWidth, this.canvasHeight, 50);
         } else {
             // フォールバック実装
             this.spatialIndex = {
                 insert: (node) => {},
-                query: (position, radius) => this.nodes.filter(n => 
-                    n.position && this.getDistance(n.position, position) <= radius
-                ),
-                clear: () => {}
+                query: (position, radius) => {
+                    if (!position || typeof position.x !== 'number' || typeof position.y !== 'number') {
+                        return [];
+                    }
+                    return this.nodes.filter(n => 
+                        n && n.position && 
+                        this.getDistance(n.position, position) <= radius
+                    );
+                },
+                clear: () => {},
+                remove: () => {},
+                update: () => {}
             };
         }
         
@@ -101,6 +119,8 @@ class OrganicLayout {
      * 語義構造の初期化
      */
     initializeSemanticStructure() {
+        if (!this.text) return;
+        
         // テキストの語義構造を解析
         this.semanticField.analyzeSemanticStructure(this.text);
         
@@ -114,17 +134,24 @@ class OrganicLayout {
     }
 
     initialize() {
+        if (!this.text || this.text.length === 0) {
+            console.warn('No text to initialize');
+            return;
+        }
+        
         // 初期シードの生成
-        const seedCount = Math.max(3, Math.floor(Math.sqrt(this.text.length) / 5));
+        const seedCount = Math.max(1, Math.min(10, Math.floor(Math.sqrt(this.text.length) / 5)));
         const centerX = this.canvasWidth / 2;
         const centerY = this.canvasHeight / 2;
         
         for (let i = 0; i < seedCount; i++) {
             const angle = (i / seedCount) * Math.PI * 2;
             const radius = 100 + Math.random() * 50;
+            const textIndex = Math.min(i * Math.floor(this.text.length / seedCount), this.text.length - 1);
+            
             const seed = {
                 id: `node_${this.nodes.length}`,
-                char: this.text[0],
+                char: this.text[textIndex] || this.text[0],
                 position: {
                     x: centerX + Math.cos(angle) * radius,
                     y: centerY + Math.sin(angle) * radius
@@ -135,10 +162,15 @@ class OrganicLayout {
                 },
                 energy: this.params.initialEnergy,
                 generation: 0,
-                textIndex: i * Math.floor(this.text.length / seedCount),
+                textIndex: textIndex,
                 parent: null,
                 children: [],
-                curvature: 0
+                curvature: 0,
+                // 語義的属性の初期化
+                semanticResonance: 0,
+                collocationStrength: 0,
+                readingDepth: { temporal: 0, semantic: 0, cognitive: 0, cultural: 0 },
+                temporalLayer: this.getCurrentTemporalLayer()
             };
             
             this.nodes.push(seed);
@@ -150,13 +182,22 @@ class OrganicLayout {
     grow() {
         if (!this.isGrowing || this.growthQueue.length === 0) return;
         
+        // メモリ制限チェック
+        if (this.nodes.length >= this.maxNodes) {
+            this.performMemoryCleanup();
+        }
+        
         const newQueue = [];
         
         for (const node of this.growthQueue) {
-            if (node.energy <= 0 || node.textIndex >= this.text.length - 1) continue;
+            if (!node || !node.position || node.energy <= 0 || node.textIndex >= this.text.length - 1) {
+                continue;
+            }
             
-            // 近隣ノードの検出
-            const nearbyNodes = this.spatialIndex.query(node.position, 50);
+            // 近隣ノードの検出（null安全性チェック付き）
+            const nearbyNodes = this.spatialIndex.query(node.position, 50).filter(n => 
+                n && n.position && n.id !== node.id
+            );
             
             // 語義場の影響を考慮した成長方向の計算
             const growthDir = this.calculateSemanticGrowthDirection(node, nearbyNodes);
@@ -172,17 +213,18 @@ class OrganicLayout {
             const curvedDir = this.applyCurvature(interferencePattern, curvature);
             
             // 新しいノードの生成
+            const nextTextIndex = Math.min(node.textIndex + 1, this.text.length - 1);
             const newNode = {
                 id: `node_${this.nodes.length}`,
-                char: this.text[node.textIndex + 1],
+                char: this.text[nextTextIndex],
                 position: {
                     x: node.position.x + curvedDir.dx * this.params.characterSpacing,
                     y: node.position.y + curvedDir.dy * this.params.characterSpacing
                 },
-                velocity: curvedDir,
-                energy: node.energy - this.calculateEnergyDecay(node, nearbyNodes),
+                velocity: { ...curvedDir },
+                energy: Math.max(0, node.energy - this.calculateEnergyDecay(node, nearbyNodes)),
                 generation: node.generation + 1,
-                textIndex: node.textIndex + 1,
+                textIndex: nextTextIndex,
                 parent: node.id,
                 children: [],
                 curvature: curvature,
@@ -195,21 +237,29 @@ class OrganicLayout {
             };
             
             // 連語感覚フィールドの生成
-            const collocationField = this.semanticField.visualizeCollocationSensation(node, nearbyNodes);
-            if (collocationField.length > 0) {
-                this.collocationFields.push(...collocationField);
+            try {
+                const collocationField = this.semanticField.visualizeCollocationSensation(node, nearbyNodes);
+                if (Array.isArray(collocationField) && collocationField.length > 0) {
+                    this.addCollocationFields(collocationField);
+                }
+            } catch (error) {
+                console.warn('Error generating collocation field:', error);
             }
             
             // 交差チェック（語義的考慮を含む）
             if (!this.checkSemanticIntersection(newNode, nearbyNodes)) {
                 this.nodes.push(newNode);
                 this.spatialIndex.insert(newNode);
-                node.children.push(newNode.id);
+                
+                if (node.children) {
+                    node.children.push(newNode.id);
+                }
+                
                 newQueue.push(newNode);
                 
                 // 接続の追加（語義的タイプを含む）
                 const connectionType = this.determineConnectionType(node, newNode);
-                this.connections.push({
+                this.addConnection({
                     from: node.id,
                     to: newNode.id,
                     type: connectionType.visual,
@@ -251,35 +301,138 @@ class OrganicLayout {
         this.generation++;
     }
 
+    /**
+     * メモリクリーンアップ（拡張版）
+     */
+    performMemoryCleanup() {
+        // ノード数制限
+        if (this.nodes.length > this.maxNodes) {
+            const removeCount = this.nodes.length - Math.floor(this.maxNodes * 0.8);
+            const removedNodes = this.nodes.splice(0, removeCount);
+            const removedIds = new Set(removedNodes.map(n => n.id));
+            
+            // 関連する接続を削除
+            this.connections = this.connections.filter(conn => 
+                !removedIds.has(conn.from) && !removedIds.has(conn.to)
+            );
+            
+            // 空間インデックスの再構築
+            this.spatialIndex.clear();
+            this.nodes.forEach(node => {
+                if (node && node.position) {
+                    this.spatialIndex.insert(node);
+                }
+            });
+        }
+        
+        // 接続数制限
+        if (this.connections.length > this.maxConnections) {
+            const removeCount = this.connections.length - Math.floor(this.maxConnections * 0.8);
+            this.connections.splice(0, removeCount);
+        }
+        
+        // 軌跡制限
+        if (this.readingTrajectory.length > this.maxTrajectoryLength) {
+            const removeCount = this.readingTrajectory.length - Math.floor(this.maxTrajectoryLength * 0.8);
+            this.readingTrajectory.splice(0, removeCount);
+        }
+        
+        // 連語フィールド制限
+        if (this.collocationFields.length > this.maxCollocationFields) {
+            const removeCount = this.collocationFields.length - Math.floor(this.maxCollocationFields * 0.8);
+            this.collocationFields.splice(0, removeCount);
+        }
+        
+        // 創発パターン制限
+        if (this.emergentPatterns.length > this.maxEmergentPatterns) {
+            const removeCount = this.emergentPatterns.length - Math.floor(this.maxEmergentPatterns * 0.8);
+            this.emergentPatterns.splice(0, removeCount);
+        }
+        
+        // 自己リフレクション履歴制限
+        if (this.selfReflectionHistory && this.selfReflectionHistory.length > this.maxSelfReflectionHistory) {
+            const removeCount = this.selfReflectionHistory.length - Math.floor(this.maxSelfReflectionHistory * 0.8);
+            this.selfReflectionHistory.splice(0, removeCount);
+        }
+    }
+
+    /**
+     * 安全な接続追加
+     */
+    addConnection(connection) {
+        if (!connection || !connection.from || !connection.to) {
+            return;
+        }
+        
+        // 重複チェック
+        const exists = this.connections.some(conn => 
+            conn.from === connection.from && conn.to === connection.to
+        );
+        
+        if (!exists) {
+            this.connections.push(connection);
+        }
+    }
+
+    /**
+     * 安全な連語フィールド追加
+     */
+    addCollocationFields(fields) {
+        if (!Array.isArray(fields)) return;
+        
+        const validFields = fields.filter(field => 
+            field && field.geometry && Array.isArray(field.geometry)
+        );
+        
+        this.collocationFields.push(...validFields);
+        
+        // サイズ制限
+        if (this.collocationFields.length > this.maxCollocationFields) {
+            const removeCount = this.collocationFields.length - this.maxCollocationFields;
+            this.collocationFields.splice(0, removeCount);
+        }
+    }
+
     calculateGrowthDirection(node, nearbyNodes) {
+        if (!node || !node.velocity || !node.position) {
+            return { dx: 1, dy: 0 };
+        }
+        
         let direction = { ...node.velocity };
         
         // 近隣ノードからの反発力
-        for (const nearby of nearbyNodes) {
-            if (nearby.id === node.id) continue;
-            
-            const dx = node.position.x - nearby.position.x;
-            const dy = node.position.y - nearby.position.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            
-            if (dist < 30) {
-                const force = (30 - dist) / 30;
-                direction.dx += (dx / dist) * force * 0.3;
-                direction.dy += (dy / dist) * force * 0.3;
+        if (Array.isArray(nearbyNodes)) {
+            for (const nearby of nearbyNodes) {
+                if (!nearby || !nearby.position || nearby.id === node.id) continue;
+                
+                const dx = node.position.x - nearby.position.x;
+                const dy = node.position.y - nearby.position.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                
+                if (dist > 0 && dist < 30) {
+                    const force = (30 - dist) / 30;
+                    direction.dx += (dx / dist) * force * 0.3;
+                    direction.dy += (dy / dist) * force * 0.3;
+                }
             }
         }
         
         // 正規化
         const mag = Math.sqrt(direction.dx * direction.dx + direction.dy * direction.dy);
-        return {
+        return mag > 0 ? {
             dx: direction.dx / mag,
             dy: direction.dy / mag
-        };
+        } : { dx: 1, dy: 0 };
     }
 
     applyCurvature(direction, curvature) {
+        if (!direction || typeof direction.dx !== 'number' || typeof direction.dy !== 'number') {
+            return { dx: 1, dy: 0 };
+        }
+        
+        const safeCurvature = Math.max(0, Math.min(1, Number(curvature) || 0));
         const angle = Math.atan2(direction.dy, direction.dx);
-        const curveAngle = angle + (Math.random() - 0.5) * curvature * Math.PI;
+        const curveAngle = angle + (Math.random() - 0.5) * safeCurvature * Math.PI;
         
         return {
             dx: Math.cos(curveAngle),
@@ -288,7 +441,13 @@ class OrganicLayout {
     }
 
     checkIntersection(node, nearbyNodes) {
+        if (!node || !node.position || !Array.isArray(nearbyNodes)) {
+            return false;
+        }
+        
         for (const nearby of nearbyNodes) {
+            if (!nearby || !nearby.position || nearby.id === node.id) continue;
+            
             const dx = node.position.x - nearby.position.x;
             const dy = node.position.y - nearby.position.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
@@ -301,12 +460,18 @@ class OrganicLayout {
     }
 
     createBranch(parentNode, nearbyNodes) {
+        if (!parentNode || !parentNode.position || !parentNode.velocity) {
+            return null;
+        }
+        
         const branchAngle = Math.atan2(parentNode.velocity.dy, parentNode.velocity.dx) + 
                           (Math.random() > 0.5 ? 1 : -1) * (Math.PI / 4 + Math.random() * Math.PI / 4);
         
+        const nextTextIndex = Math.min(parentNode.textIndex + 1, this.text.length - 1);
+        
         const branchNode = {
             id: `node_${this.nodes.length}`,
-            char: this.text[parentNode.textIndex + 1],
+            char: this.text[nextTextIndex],
             position: {
                 x: parentNode.position.x + Math.cos(branchAngle) * this.params.characterSpacing,
                 y: parentNode.position.y + Math.sin(branchAngle) * this.params.characterSpacing
@@ -315,20 +480,27 @@ class OrganicLayout {
                 dx: Math.cos(branchAngle),
                 dy: Math.sin(branchAngle)
             },
-            energy: parentNode.energy * 0.7,
+            energy: Math.max(0, parentNode.energy * 0.7),
             generation: parentNode.generation + 1,
-            textIndex: parentNode.textIndex + 1,
+            textIndex: nextTextIndex,
             parent: parentNode.id,
             children: [],
-            curvature: 0
+            curvature: 0,
+            semanticResonance: 0,
+            collocationStrength: 0,
+            readingDepth: { temporal: 0, semantic: 0, cognitive: 0, cultural: 0 },
+            temporalLayer: this.getCurrentTemporalLayer()
         };
         
         if (!this.checkIntersection(branchNode, nearbyNodes)) {
             this.nodes.push(branchNode);
             this.spatialIndex.insert(branchNode);
-            parentNode.children.push(branchNode.id);
             
-            this.connections.push({
+            if (parentNode.children) {
+                parentNode.children.push(branchNode.id);
+            }
+            
+            this.addConnection({
                 from: parentNode.id,
                 to: branchNode.id,
                 type: 'tertiary',
@@ -342,6 +514,10 @@ class OrganicLayout {
     }
 
     createAvoidanceBranch(parentNode, nearbyNodes) {
+        if (!parentNode || !parentNode.position || !Array.isArray(nearbyNodes)) {
+            return null;
+        }
+        
         // 最も空いている方向を探す
         let bestAngle = null;
         let maxDistance = 0;
@@ -354,6 +530,8 @@ class OrganicLayout {
             
             let minDist = Infinity;
             for (const nearby of nearbyNodes) {
+                if (!nearby || !nearby.position) continue;
+                
                 const dist = Math.sqrt(
                     Math.pow(testPos.x - nearby.position.x, 2) +
                     Math.pow(testPos.y - nearby.position.y, 2)
@@ -374,39 +552,45 @@ class OrganicLayout {
         return null;
     }
 
-    // === 語義的成長メソッド群 ===
+    // === 語義的成長メソッド群（null安全性強化） ===
 
     /**
      * 語義場を考慮した成長方向の計算
      */
     calculateSemanticGrowthDirection(node, nearbyNodes) {
+        if (!node || !node.position) {
+            return { dx: 1, dy: 0 };
+        }
+        
         // 従来の物理的方向
         const physicalDir = this.calculateGrowthDirection(node, nearbyNodes);
         
         // 語義的引力場の計算
         let semanticForce = { dx: 0, dy: 0 };
         
-        for (const nearby of nearbyNodes) {
-            if (nearby.id === node.id) continue;
-            
-            const semanticVector = this.semanticField.calculateSemanticForce(
-                node, nearby, this.getDistance(node.position, nearby.position)
-            );
-            
-            const dirToNearby = this.getNormalizedDirection(node.position, nearby.position);
-            
-            // 語義的引力/斥力の適用
-            semanticForce.dx += dirToNearby.dx * semanticVector.attraction * this.params.semanticGravity;
-            semanticForce.dy += dirToNearby.dy * semanticVector.attraction * this.params.semanticGravity;
-            
-            // 語義的斥力
-            semanticForce.dx -= dirToNearby.dx * semanticVector.repulsion * this.params.semanticGravity;
-            semanticForce.dy -= dirToNearby.dy * semanticVector.repulsion * this.params.semanticGravity;
-            
-            // 側方力（螺旋構造生成）
-            const lateralDir = { dx: -dirToNearby.dy, dy: dirToNearby.dx };
-            semanticForce.dx += lateralDir.dx * semanticVector.lateral;
-            semanticForce.dy += lateralDir.dy * semanticVector.lateral;
+        if (Array.isArray(nearbyNodes)) {
+            for (const nearby of nearbyNodes) {
+                if (!nearby || !nearby.position || nearby.id === node.id) continue;
+                
+                const semanticVector = this.semanticField.calculateSemanticForce(
+                    node, nearby, this.getDistance(node.position, nearby.position)
+                );
+                
+                const dirToNearby = this.getNormalizedDirection(node.position, nearby.position);
+                
+                // 語義的引力/斥力の適用
+                semanticForce.dx += dirToNearby.dx * semanticVector.attraction * this.params.semanticGravity;
+                semanticForce.dy += dirToNearby.dy * semanticVector.attraction * this.params.semanticGravity;
+                
+                // 語義的斥力
+                semanticForce.dx -= dirToNearby.dx * semanticVector.repulsion * this.params.semanticGravity;
+                semanticForce.dy -= dirToNearby.dy * semanticVector.repulsion * this.params.semanticGravity;
+                
+                // 側方力（螺旋構造生成）
+                const lateralDir = { dx: -dirToNearby.dy, dy: dirToNearby.dx };
+                semanticForce.dx += lateralDir.dx * semanticVector.lateral;
+                semanticForce.dy += lateralDir.dy * semanticVector.lateral;
+            }
         }
         
         // 物理的方向と語義的方向の合成
@@ -422,16 +606,20 @@ class OrganicLayout {
      * 視覚-語義干渉パターンの適用
      */
     applyInterferencePattern(visualDir, embodiedDir, node) {
+        if (!visualDir || !embodiedDir || !node) {
+            return { dx: 1, dy: 0 };
+        }
+        
         const interferenceAmplitude = this.params.interferenceAmplitude;
         const embodimentFactor = this.params.embodimentFactor;
         
         // 干渉波形の生成
-        const phase = node.generation * 0.1 + node.textIndex * 0.05;
+        const phase = (node.generation || 0) * 0.1 + (node.textIndex || 0) * 0.05;
         const interferenceX = Math.sin(phase) * interferenceAmplitude;
         const interferenceY = Math.cos(phase * 1.3) * interferenceAmplitude;
         
         // 視覚方向、身体化方向、干渉波形の合成
-        return {
+        const result = {
             dx: visualDir.dx * (1 - embodimentFactor) + 
                 embodiedDir.dx * embodimentFactor + 
                 interferenceX,
@@ -439,71 +627,101 @@ class OrganicLayout {
                 embodiedDir.dy * embodimentFactor + 
                 interferenceY
         };
+        
+        return this.normalizeVector(result);
     }
 
     /**
      * 語義的曲率の計算
      */
     calculateSemanticCurvature(node, nearbyNodes) {
-        const baseCurvature = (this.params.initialEnergy - node.energy) / this.params.initialEnergy;
+        if (!node || typeof node.energy !== 'number') {
+            return 0.3;
+        }
+        
+        const baseCurvature = Math.max(0, (this.params.initialEnergy - node.energy) / this.params.initialEnergy);
         
         // 連語強度による曲率修正
         let maxCollocation = 0;
-        for (const nearby of nearbyNodes) {
-            const collocationStrength = this.semanticField.getCollocationStrength(node.char, nearby.char);
-            maxCollocation = Math.max(maxCollocation, collocationStrength);
+        if (Array.isArray(nearbyNodes) && node.char) {
+            for (const nearby of nearbyNodes) {
+                if (!nearby || !nearby.char) continue;
+                
+                const collocationStrength = this.semanticField.getCollocationStrength(node.char, nearby.char);
+                maxCollocation = Math.max(maxCollocation, collocationStrength);
+            }
         }
         
         // 語義的複雑性による曲率
-        const semanticComplexity = this.semanticField.getSemanticComplexity(node.char);
+        const semanticComplexity = node.char ? this.semanticField.getSemanticComplexity(node.char) : 1;
         const complexityFactor = Math.min(1, semanticComplexity / 10);
         
-        return baseCurvature + (maxCollocation * 0.3) + (complexityFactor * 0.2);
+        return Math.max(0, Math.min(1, baseCurvature + (maxCollocation * 0.3) + (complexityFactor * 0.2)));
     }
 
     /**
      * 語義的要因を含むエネルギー減衰の計算
      */
     calculateEnergyDecay(node, nearbyNodes) {
+        if (!node) return this.params.energyDecay;
+        
         let baseDecay = this.params.energyDecay;
         
         // 認知負荷による追加減衰
         const cognitiveLoad = this.semanticField.calculateCognitiveLoad(node);
-        const loadPenalty = cognitiveLoad * 0.1;
+        const loadPenalty = Math.max(0, cognitiveLoad * 0.1);
         
         // 連語関係によるエネルギー回復
         let collocationBonus = 0;
-        for (const nearby of nearbyNodes) {
-            const strength = this.semanticField.getCollocationStrength(node.char, nearby.char);
-            collocationBonus += strength * 0.05;
+        if (Array.isArray(nearbyNodes) && node.char) {
+            for (const nearby of nearbyNodes) {
+                if (!nearby || !nearby.char) continue;
+                
+                const strength = this.semanticField.getCollocationStrength(node.char, nearby.char);
+                collocationBonus += Math.max(0, strength * 0.05);
+            }
         }
         
-        return Math.max(0.1, baseDecay + loadPenalty - collocationBonus);
+        return Math.max(0.1, Math.min(1, baseDecay + loadPenalty - collocationBonus));
     }
 
     /**
      * 語義的共鳴の計算
      */
     calculateSemanticResonance(node, nearbyNodes) {
+        if (!node || !node.char || !node.position || !Array.isArray(nearbyNodes)) {
+            return 0;
+        }
+        
         let totalResonance = 0;
+        let validCount = 0;
         
         for (const nearby of nearbyNodes) {
-            const semanticSimilarity = 1 - this.semanticField.getSemanticDistance(node.char, nearby.char);
+            if (!nearby || !nearby.char || !nearby.position) continue;
+            
+            const semanticSimilarity = Math.max(0, 1 - this.semanticField.getSemanticDistance(node.char, nearby.char));
             const spatialProximity = Math.max(0, 1 - this.getDistance(node.position, nearby.position) / 100);
             
             totalResonance += semanticSimilarity * spatialProximity;
+            validCount++;
         }
         
-        return Math.min(1, totalResonance / Math.max(1, nearbyNodes.length));
+        return validCount > 0 ? Math.min(1, totalResonance / validCount) : 0;
     }
 
     /**
      * 最大連語強度の取得
      */
     getMaxCollocationStrength(node, nearbyNodes) {
+        if (!node || !node.char || !Array.isArray(nearbyNodes)) {
+            return 0;
+        }
+        
         let maxStrength = 0;
         
         for (const nearby of nearbyNodes) {
+            if (!nearby || !nearby.char) continue;
+            
             const strength = this.semanticField.getCollocationStrength(node.char, nearby.char);
             maxStrength = Math.max(maxStrength, strength);
         }
@@ -515,19 +733,29 @@ class OrganicLayout {
      * 読解深度の計算
      */
     calculateReadingDepth(node) {
+        if (!node) {
+            return { temporal: 0, semantic: 0, cognitive: 0, cultural: 0 };
+        }
+        
         return {
             temporal: this.semanticField.readingHistory.length,
-            semantic: node.generation,
+            semantic: node.generation || 0,
             cognitive: this.calculateCognitiveDepth(node),
             cultural: this.getCulturalDepth(node)
         };
     }
 
     calculateCognitiveDepth(node) {
+        if (!node || typeof node.generation !== 'number' || typeof node.energy !== 'number') {
+            return 0;
+        }
+        
         return Math.log(node.generation + 1) * node.energy / this.params.initialEnergy;
     }
 
     getCulturalDepth(node) {
+        if (!node || !node.char) return 0;
+        
         return this.semanticField.contextualLayers.cultural.get(node.char)?.depth || 0;
     }
 
@@ -554,19 +782,25 @@ class OrganicLayout {
      * 語義的交差チェック
      */
     checkSemanticIntersection(node, nearbyNodes) {
+        if (!node || !node.position) return true;
+        
         // 物理的交差チェック
         if (this.checkIntersection(node, nearbyNodes)) {
             return true;
         }
         
         // 語義的干渉チェック
-        for (const nearby of nearbyNodes) {
-            const semanticDistance = this.semanticField.getSemanticDistance(node.char, nearby.char);
-            const spatialDistance = this.getDistance(node.position, nearby.position);
-            
-            // 語義的に近い単語が物理的に近すぎる場合は干渉
-            if (semanticDistance < 0.3 && spatialDistance < 25) {
-                return true;
+        if (node.char && Array.isArray(nearbyNodes)) {
+            for (const nearby of nearbyNodes) {
+                if (!nearby || !nearby.char || !nearby.position) continue;
+                
+                const semanticDistance = this.semanticField.getSemanticDistance(node.char, nearby.char);
+                const spatialDistance = this.getDistance(node.position, nearby.position);
+                
+                // 語義的に近い単語が物理的に近すぎる場合は干渉
+                if (semanticDistance < 0.3 && spatialDistance < 25) {
+                    return true;
+                }
             }
         }
         
@@ -577,9 +811,19 @@ class OrganicLayout {
      * 接続タイプの決定
      */
     determineConnectionType(fromNode, toNode) {
-        const energy = fromNode.energy;
-        const semanticDistance = this.semanticField.getSemanticDistance(fromNode.char, toNode.char);
-        const collocationStrength = this.semanticField.getCollocationStrength(fromNode.char, toNode.char);
+        if (!fromNode || !toNode) {
+            return { 
+                visual: 'tertiary', 
+                semantic: 'neutral', 
+                interference: { amplitude: 0, frequency: 0, phase: 0 } 
+            };
+        }
+        
+        const energy = fromNode.energy || 0;
+        const semanticDistance = fromNode.char && toNode.char ? 
+            this.semanticField.getSemanticDistance(fromNode.char, toNode.char) : 1;
+        const collocationStrength = fromNode.char && toNode.char ? 
+            this.semanticField.getCollocationStrength(fromNode.char, toNode.char) : 0;
         
         let visualType, semanticType, interference;
         
@@ -606,9 +850,9 @@ class OrganicLayout {
         // 干渉パターン
         const visualSemanticRatio = (1 - semanticDistance) / Math.max(0.1, energy / this.params.initialEnergy);
         interference = {
-            amplitude: visualSemanticRatio * this.params.interferenceAmplitude,
-            frequency: collocationStrength * 2 * Math.PI,
-            phase: (fromNode.generation + toNode.generation) % (2 * Math.PI)
+            amplitude: Math.max(0, Math.min(1, visualSemanticRatio * this.params.interferenceAmplitude)),
+            frequency: Math.max(0, collocationStrength * 2 * Math.PI),
+            phase: ((fromNode.generation || 0) + (toNode.generation || 0)) % (2 * Math.PI)
         };
         
         return { visual: visualType, semantic: semanticType, interference };
@@ -618,6 +862,8 @@ class OrganicLayout {
      * 語義的分岐確率の計算
      */
     calculateSemanticBranchProbability(node, nearbyNodes) {
+        if (!node || !node.char) return this.params.branchProbability;
+        
         let baseProbability = this.params.branchProbability;
         
         // 語義的複雑性による分岐促進
@@ -626,23 +872,29 @@ class OrganicLayout {
         
         // 連語関係による分岐促進
         let collocationBonus = 0;
-        for (const nearby of nearbyNodes) {
-            const strength = this.semanticField.getCollocationStrength(node.char, nearby.char);
-            if (strength > 0.5) {
-                collocationBonus += 0.1;
+        if (Array.isArray(nearbyNodes)) {
+            for (const nearby of nearbyNodes) {
+                if (!nearby || !nearby.char) continue;
+                
+                const strength = this.semanticField.getCollocationStrength(node.char, nearby.char);
+                if (strength > 0.5) {
+                    collocationBonus += 0.1;
+                }
             }
         }
         
         // 読解深度による調整
         const depthFactor = Math.min(1, this.semanticField.readingHistory.length / 100);
         
-        return Math.min(0.8, baseProbability + complexityBonus + collocationBonus * depthFactor);
+        return Math.max(0, Math.min(0.8, baseProbability + complexityBonus + collocationBonus * depthFactor));
     }
 
     /**
      * 語義的分岐の作成
      */
     createSemanticBranch(parentNode, nearbyNodes) {
+        if (!parentNode || !parentNode.position) return null;
+        
         // 最も語義的に興味深い方向を探す
         let bestDirection = null;
         let maxInterest = 0;
@@ -657,19 +909,21 @@ class OrganicLayout {
             }
         }
         
-        if (!bestDirection) return null;
+        if (!bestDirection || maxInterest <= 0) return null;
+        
+        const nextTextIndex = Math.min(parentNode.textIndex + 1, this.text.length - 1);
         
         const branchNode = {
             id: `node_${this.nodes.length}`,
-            char: this.text[parentNode.textIndex + 1],
+            char: this.text[nextTextIndex],
             position: {
                 x: parentNode.position.x + bestDirection.dx * this.params.characterSpacing,
                 y: parentNode.position.y + bestDirection.dy * this.params.characterSpacing
             },
-            velocity: bestDirection,
-            energy: parentNode.energy * 0.8,
+            velocity: { ...bestDirection },
+            energy: Math.max(0, parentNode.energy * 0.8),
             generation: parentNode.generation + 1,
-            textIndex: parentNode.textIndex + 1,
+            textIndex: nextTextIndex,
             parent: parentNode.id,
             children: [],
             curvature: 0,
@@ -677,15 +931,20 @@ class OrganicLayout {
             // 語義的属性
             semanticResonance: maxInterest,
             branchType: 'semantic',
+            collocationStrength: 0,
+            readingDepth: this.calculateReadingDepth(parentNode),
             temporalLayer: this.getCurrentTemporalLayer()
         };
         
         if (!this.checkSemanticIntersection(branchNode, nearbyNodes)) {
             this.nodes.push(branchNode);
             this.spatialIndex.insert(branchNode);
-            parentNode.children.push(branchNode.id);
             
-            this.connections.push({
+            if (parentNode.children) {
+                parentNode.children.push(branchNode.id);
+            }
+            
+            this.addConnection({
                 from: parentNode.id,
                 to: branchNode.id,
                 type: 'semantic_branch',
@@ -701,6 +960,8 @@ class OrganicLayout {
     }
 
     calculateSemanticInterest(node, direction, nearbyNodes) {
+        if (!node || !direction || !node.char) return 0;
+        
         // その方向での語義的興味度を計算
         let interest = 0;
         
@@ -709,13 +970,17 @@ class OrganicLayout {
         interest += Math.sin(angle * 3) * 0.3; // 波状パターン
         
         // 近隣ノードとの語義的関係
-        for (const nearby of nearbyNodes) {
-            const nearbyDir = this.getNormalizedDirection(node.position, nearby.position);
-            const dirSimilarity = this.dot(direction, nearbyDir);
-            
-            if (dirSimilarity > 0.7) { // 同方向
-                const semanticSimilarity = 1 - this.semanticField.getSemanticDistance(node.char, nearby.char);
-                interest += semanticSimilarity * 0.4;
+        if (Array.isArray(nearbyNodes)) {
+            for (const nearby of nearbyNodes) {
+                if (!nearby || !nearby.position || !nearby.char) continue;
+                
+                const nearbyDir = this.getNormalizedDirection(node.position, nearby.position);
+                const dirSimilarity = this.dot(direction, nearbyDir);
+                
+                if (dirSimilarity > 0.7) { // 同方向
+                    const semanticSimilarity = 1 - this.semanticField.getSemanticDistance(node.char, nearby.char);
+                    interest += semanticSimilarity * 0.4;
+                }
             }
         }
         
@@ -726,6 +991,8 @@ class OrganicLayout {
      * 語義的回避分岐の作成
      */
     createSemanticAvoidanceBranch(parentNode, nearbyNodes) {
+        if (!parentNode || !parentNode.position || !parentNode.char) return null;
+        
         // 語義的・物理的に最も空いている方向を探す
         let bestAngle = null;
         let maxFreedom = 0;
@@ -752,10 +1019,14 @@ class OrganicLayout {
     }
 
     calculateSemanticFreedom(position, char, nearbyNodes) {
+        if (!position || !char || !Array.isArray(nearbyNodes)) return 0;
+        
         let spatialFreedom = 1;
         let semanticFreedom = 1;
         
         for (const nearby of nearbyNodes) {
+            if (!nearby || !nearby.position || !nearby.char) continue;
+            
             const spatialDist = this.getDistance(position, nearby.position);
             const semanticDist = this.semanticField.getSemanticDistance(char, nearby.char);
             
@@ -767,39 +1038,42 @@ class OrganicLayout {
     }
 
     /**
-     * 読解軌跡の記録
+     * 読解軌跡の記録（null安全性強化）
      */
     recordReadingTrajectory(fromNode, toNode, direction) {
+        if (!fromNode || !fromNode.position) return;
+        
         const trajectoryPoint = {
             timestamp: Date.now(),
             from: {
-                id: fromNode.id,
-                char: fromNode.char,
+                id: fromNode.id || 'unknown',
+                char: fromNode.char || '',
                 position: { ...fromNode.position }
             },
             to: toNode ? {
-                id: toNode.id,
-                char: toNode.char,
+                id: toNode.id || 'unknown',
+                char: toNode.char || '',
                 position: { ...toNode.position }
             } : null,
-            direction: { ...direction },
+            direction: direction ? { ...direction } : { dx: 0, dy: 0 },
             semanticContext: {
                 resonance: fromNode.semanticResonance || 0,
                 collocationStrength: fromNode.collocationStrength || 0,
                 readingDepth: fromNode.readingDepth || { temporal: 0, semantic: 0 }
             },
             cognitiveState: {
-                energy: fromNode.energy,
-                generation: fromNode.generation,
-                curvature: fromNode.curvature
+                energy: fromNode.energy || 0,
+                generation: fromNode.generation || 0,
+                curvature: fromNode.curvature || 0
             }
         };
         
         this.readingTrajectory.push(trajectoryPoint);
         
         // 履歴の制限（メモリ管理）
-        if (this.readingTrajectory.length > 1000) {
-            this.readingTrajectory = this.readingTrajectory.slice(-800);
+        if (this.readingTrajectory.length > this.maxTrajectoryLength) {
+            const removeCount = this.readingTrajectory.length - this.maxTrajectoryLength;
+            this.readingTrajectory.splice(0, removeCount);
         }
     }
 
@@ -809,100 +1083,143 @@ class OrganicLayout {
     updateEmergentPatterns() {
         if (this.nodes.length < 10) return;
         
-        const patterns = this.semanticField.recognizeEmergentPatterns(this.nodes, this.connections);
-        
-        // 新しいパターンのみを追加
-        patterns.clusters.forEach(cluster => {
-            if (!this.hasExistingPattern('cluster', cluster)) {
-                this.emergentPatterns.push({
-                    type: 'semantic_cluster',
-                    elements: cluster,
-                    generation: this.generation,
-                    strength: cluster.length / this.nodes.length
+        try {
+            const patterns = this.semanticField.recognizeEmergentPatterns(this.nodes, this.connections);
+            
+            // 新しいパターンのみを追加
+            if (patterns.clusters && Array.isArray(patterns.clusters)) {
+                patterns.clusters.forEach(cluster => {
+                    if (!this.hasExistingPattern('cluster', cluster)) {
+                        this.emergentPatterns.push({
+                            type: 'semantic_cluster',
+                            elements: cluster,
+                            generation: this.generation,
+                            strength: cluster.length / this.nodes.length
+                        });
+                    }
                 });
             }
-        });
-        
-        patterns.bridges.forEach(bridge => {
-            if (!this.hasExistingPattern('bridge', bridge)) {
-                this.emergentPatterns.push({
-                    type: 'semantic_bridge',
-                    connection: bridge,
-                    generation: this.generation,
-                    strength: bridge.semanticGap || 0
+            
+            if (patterns.bridges && Array.isArray(patterns.bridges)) {
+                patterns.bridges.forEach(bridge => {
+                    if (!this.hasExistingPattern('bridge', bridge)) {
+                        this.emergentPatterns.push({
+                            type: 'semantic_bridge',
+                            connection: bridge,
+                            generation: this.generation,
+                            strength: bridge.semanticGap || 0
+                        });
+                    }
                 });
             }
-        });
-        
-        patterns.spirals.forEach(spiral => {
-            this.emergentPatterns.push({
-                type: 'reading_spiral',
-                trajectory: spiral,
-                generation: this.generation,
-                complexity: spiral.length
-            });
-        });
+            
+            if (patterns.spirals && Array.isArray(patterns.spirals)) {
+                patterns.spirals.forEach(spiral => {
+                    this.emergentPatterns.push({
+                        type: 'reading_spiral',
+                        trajectory: spiral,
+                        generation: this.generation,
+                        complexity: spiral.length
+                    });
+                });
+            }
+            
+            // パターン数制限
+            if (this.emergentPatterns.length > this.maxEmergentPatterns) {
+                const removeCount = this.emergentPatterns.length - this.maxEmergentPatterns;
+                this.emergentPatterns.splice(0, removeCount);
+            }
+            
+        } catch (error) {
+            console.warn('Error updating emergent patterns:', error);
+        }
     }
 
     hasExistingPattern(type, newPattern) {
+        if (!Array.isArray(this.emergentPatterns)) return false;
+        
         return this.emergentPatterns.some(pattern => {
             if (type === 'cluster' && pattern.type === 'semantic_cluster') {
-                return this.arraysOverlap(pattern.elements.map(e => e.id), newPattern.map(e => e.id), 0.7);
+                if (!pattern.elements || !Array.isArray(newPattern)) return false;
+                
+                const existingIds = pattern.elements.map(e => e && e.id).filter(Boolean);
+                const newIds = newPattern.map(e => e && e.id).filter(Boolean);
+                
+                return this.arraysOverlap(existingIds, newIds, 0.7);
             }
             return false;
         });
     }
 
     arraysOverlap(arr1, arr2, threshold) {
+        if (!Array.isArray(arr1) || !Array.isArray(arr2)) return false;
+        
         const intersection = arr1.filter(x => arr2.includes(x));
         const union = [...new Set([...arr1, ...arr2])];
-        return intersection.length / union.length >= threshold;
+        return union.length > 0 ? intersection.length / union.length >= threshold : false;
     }
 
     /**
      * 自己リフレクションの実行
      */
     performSelfReflection() {
-        const reflexiveElements = this.semanticField.generateSelfReflectivePattern(this.nodes, this.connections);
-        
-        // システムの読解プロセスを分析
-        const readingMetrics = {
-            totalNodes: this.nodes.length,
-            totalConnections: this.connections.length,
-            averageSemanticResonance: this.calculateAverageSemanticResonance(),
-            emergentPatternCount: this.emergentPatterns.length,
-            collocationFieldCount: this.collocationFields.length,
-            readingTrajectoryLength: this.readingTrajectory.length
-        };
-        
-        // 自己言及的フィードバックループの生成
-        const selfReflection = {
-            timestamp: Date.now(),
-            generation: this.generation,
-            metrics: readingMetrics,
-            reflexiveElements: reflexiveElements,
-            systemState: this.captureSystemState(),
-            insights: this.generateSystemInsights()
-        };
-        
-        // 自己リフレクションの記録
-        if (!this.selfReflectionHistory) {
-            this.selfReflectionHistory = [];
+        try {
+            const reflexiveElements = this.semanticField.generateSelfReflectivePattern(this.nodes, this.connections);
+            
+            // システムの読解プロセスを分析
+            const readingMetrics = {
+                totalNodes: this.nodes.length,
+                totalConnections: this.connections.length,
+                averageSemanticResonance: this.calculateAverageSemanticResonance(),
+                emergentPatternCount: this.emergentPatterns.length,
+                collocationFieldCount: this.collocationFields.length,
+                readingTrajectoryLength: this.readingTrajectory.length
+            };
+            
+            // 自己言及的フィードバックループの生成
+            const selfReflection = {
+                timestamp: Date.now(),
+                generation: this.generation,
+                metrics: readingMetrics,
+                reflexiveElements: reflexiveElements,
+                systemState: this.captureSystemState(),
+                insights: this.generateSystemInsights()
+            };
+            
+            // 自己リフレクションの記録
+            if (!this.selfReflectionHistory) {
+                this.selfReflectionHistory = [];
+            }
+            this.selfReflectionHistory.push(selfReflection);
+            
+            // 履歴サイズ制限
+            if (this.selfReflectionHistory.length > this.maxSelfReflectionHistory) {
+                const removeCount = this.selfReflectionHistory.length - this.maxSelfReflectionHistory;
+                this.selfReflectionHistory.splice(0, removeCount);
+            }
+            
+            // システムパラメータの適応的調整
+            this.adaptSystemParameters(selfReflection);
+            
+        } catch (error) {
+            console.warn('Error in self reflection:', error);
         }
-        this.selfReflectionHistory.push(selfReflection);
-        
-        // システムパラメータの適応的調整
-        this.adaptSystemParameters(selfReflection);
     }
 
     calculateAverageSemanticResonance() {
         if (this.nodes.length === 0) return 0;
         
-        const totalResonance = this.nodes.reduce((sum, node) => {
-            return sum + (node.semanticResonance || 0);
+        const validNodes = this.nodes.filter(node => 
+            node && typeof node.semanticResonance === 'number'
+        );
+        
+        if (validNodes.length === 0) return 0;
+        
+        const totalResonance = validNodes.reduce((sum, node) => {
+            return sum + node.semanticResonance;
         }, 0);
         
-        return totalResonance / this.nodes.length;
+        return totalResonance / validNodes.length;
     }
 
     captureSystemState() {
@@ -920,7 +1237,7 @@ class OrganicLayout {
         
         let totalSemanticConnections = 0;
         this.connections.forEach(conn => {
-            if (conn.semanticType && conn.semanticType !== 'neutral') {
+            if (conn && conn.semanticType && conn.semanticType !== 'neutral') {
                 totalSemanticConnections++;
             }
         });
@@ -932,91 +1249,119 @@ class OrganicLayout {
         if (this.connections.length === 0) return 0;
         
         let totalCurvature = 0;
+        let validConnections = 0;
+        
         this.connections.forEach(conn => {
-            totalCurvature += conn.curvature || 0;
+            if (conn && typeof conn.curvature === 'number') {
+                totalCurvature += conn.curvature;
+                validConnections++;
+            }
         });
         
-        return totalCurvature / this.connections.length;
+        return validConnections > 0 ? totalCurvature / validConnections : 0;
     }
 
     generateSystemInsights() {
         const insights = [];
         
-        // 語義クラスターの発見
-        const clusterCount = this.emergentPatterns.filter(p => p.type === 'semantic_cluster').length;
-        if (clusterCount > 0) {
-            insights.push({
-                type: 'semantic_clustering',
-                description: `${clusterCount}個の語義クラスターが創発`,
-                significance: clusterCount / this.nodes.length
-            });
-        }
-        
-        // 読解螺旋の発見
-        const spiralCount = this.emergentPatterns.filter(p => p.type === 'reading_spiral').length;
-        if (spiralCount > 0) {
-            insights.push({
-                type: 'spiral_emergence',
-                description: `${spiralCount}個の読解螺旋パターンが出現`,
-                significance: spiralCount / 10
-            });
-        }
-        
-        // 干渉パターンの分析
-        const interferenceConnections = this.connections.filter(conn => 
-            conn.interference && conn.interference.amplitude > 0.3
-        );
-        if (interferenceConnections.length > 0) {
-            insights.push({
-                type: 'visual_semantic_interference',
-                description: `${interferenceConnections.length}個の視覚-語義干渉パターンが活性化`,
-                significance: interferenceConnections.length / this.connections.length
-            });
+        try {
+            // 語義クラスターの発見
+            const clusterCount = this.emergentPatterns.filter(p => p.type === 'semantic_cluster').length;
+            if (clusterCount > 0) {
+                insights.push({
+                    type: 'semantic_clustering',
+                    description: `${clusterCount}個の語義クラスターが創発`,
+                    significance: clusterCount / this.nodes.length
+                });
+            }
+            
+            // 読解螺旋の発見
+            const spiralCount = this.emergentPatterns.filter(p => p.type === 'reading_spiral').length;
+            if (spiralCount > 0) {
+                insights.push({
+                    type: 'spiral_emergence',
+                    description: `${spiralCount}個の読解螺旋パターンが出現`,
+                    significance: spiralCount / 10
+                });
+            }
+            
+            // 干渉パターンの分析
+            const interferenceConnections = this.connections.filter(conn => 
+                conn && conn.interference && conn.interference.amplitude > 0.3
+            );
+            if (interferenceConnections.length > 0) {
+                insights.push({
+                    type: 'visual_semantic_interference',
+                    description: `${interferenceConnections.length}個の視覚-語義干渉パターンが活性化`,
+                    significance: interferenceConnections.length / this.connections.length
+                });
+            }
+            
+        } catch (error) {
+            console.warn('Error generating insights:', error);
         }
         
         return insights;
     }
 
     adaptSystemParameters(reflection) {
-        const metrics = reflection.metrics;
-        const state = reflection.systemState;
+        if (!reflection || !reflection.systemState) return;
         
-        // 語義密度に基づく調整
-        if (state.semanticDensity > 0.8) {
-            this.params.semanticGravity *= 0.95; // 語義引力を弱める
-        } else if (state.semanticDensity < 0.3) {
-            this.params.semanticGravity *= 1.05; // 語義引力を強める
+        try {
+            const state = reflection.systemState;
+            
+            // 語義密度に基づく調整
+            if (state.semanticDensity > 0.8) {
+                this.params.semanticGravity *= 0.95; // 語義引力を弱める
+            } else if (state.semanticDensity < 0.3) {
+                this.params.semanticGravity *= 1.05; // 語義引力を強める
+            }
+            
+            // 視覚複雑性に基づく調整
+            if (state.visualComplexity > 0.7) {
+                this.params.interferenceAmplitude *= 0.9; // 干渉を弱める
+            } else if (state.visualComplexity < 0.3) {
+                this.params.interferenceAmplitude *= 1.1; // 干渉を強める
+            }
+            
+            // 認知負荷に基づく調整
+            if (state.cognitiveLoad > 0.8) {
+                this.params.energyDecay *= 1.1; // エネルギー減衰を強める
+            } else if (state.cognitiveLoad < 0.3) {
+                this.params.energyDecay *= 0.9; // エネルギー減衰を弱める
+            }
+            
+            // パラメータの制限
+            this.params.semanticGravity = Math.max(0.1, Math.min(1.0, this.params.semanticGravity));
+            this.params.interferenceAmplitude = Math.max(0.1, Math.min(1.0, this.params.interferenceAmplitude));
+            this.params.energyDecay = Math.max(0.1, Math.min(1.0, this.params.energyDecay));
+            
+        } catch (error) {
+            console.warn('Error adapting parameters:', error);
         }
-        
-        // 視覚複雑性に基づく調整
-        if (state.visualComplexity > 0.7) {
-            this.params.interferenceAmplitude *= 0.9; // 干渉を弱める
-        } else if (state.visualComplexity < 0.3) {
-            this.params.interferenceAmplitude *= 1.1; // 干渉を強める
-        }
-        
-        // 認知負荷に基づく調整
-        if (state.cognitiveLoad > 0.8) {
-            this.params.energyDecay *= 1.1; // エネルギー減衰を強める
-        } else if (state.cognitiveLoad < 0.3) {
-            this.params.energyDecay *= 0.9; // エネルギー減衰を弱める
-        }
-        
-        // パラメータの制限
-        this.params.semanticGravity = Math.max(0.1, Math.min(1.0, this.params.semanticGravity));
-        this.params.interferenceAmplitude = Math.max(0.1, Math.min(1.0, this.params.interferenceAmplitude));
-        this.params.energyDecay = Math.max(0.1, Math.min(1.0, this.params.energyDecay));
     }
 
-    // === ユーティリティメソッド ===
+    // === ユーティリティメソッド（null安全性強化） ===
 
     getDistance(pos1, pos2) {
+        if (!pos1 || !pos2 || 
+            typeof pos1.x !== 'number' || typeof pos1.y !== 'number' ||
+            typeof pos2.x !== 'number' || typeof pos2.y !== 'number') {
+            return Infinity;
+        }
+        
         const dx = pos1.x - pos2.x;
         const dy = pos1.y - pos2.y;
         return Math.sqrt(dx * dx + dy * dy);
     }
 
     getNormalizedDirection(from, to) {
+        if (!from || !to || 
+            typeof from.x !== 'number' || typeof from.y !== 'number' ||
+            typeof to.x !== 'number' || typeof to.y !== 'number') {
+            return { dx: 0, dy: 0 };
+        }
+        
         const dx = to.x - from.x;
         const dy = to.y - from.y;
         const mag = Math.sqrt(dx * dx + dy * dy);
@@ -1024,11 +1369,21 @@ class OrganicLayout {
     }
 
     normalizeVector(vector) {
+        if (!vector || typeof vector.dx !== 'number' || typeof vector.dy !== 'number') {
+            return { dx: 0, dy: 0 };
+        }
+        
         const mag = Math.sqrt(vector.dx * vector.dx + vector.dy * vector.dy);
         return mag > 0 ? { dx: vector.dx / mag, dy: vector.dy / mag } : { dx: 0, dy: 0 };
     }
 
     dot(v1, v2) {
+        if (!v1 || !v2 || 
+            typeof v1.dx !== 'number' || typeof v1.dy !== 'number' ||
+            typeof v2.dx !== 'number' || typeof v2.dy !== 'number') {
+            return 0;
+        }
+        
         return v1.dx * v2.dx + v1.dy * v2.dy;
     }
 
@@ -1053,7 +1408,10 @@ class OrganicLayout {
         this.readingTrajectory = [];
         this.emergentPatterns = [];
         this.selfReflectionHistory = [];
-        this.semanticField = new SemanticField();
+        
+        if (typeof SemanticField !== 'undefined') {
+            this.semanticField = new SemanticField();
+        }
         
         this.initialize();
     }
@@ -1075,21 +1433,21 @@ class OrganicLayout {
      * 連語感覚フィールドを取得
      */
     getCollocationFields() {
-        return this.collocationFields;
+        return this.collocationFields || [];
     }
 
     /**
      * 読解軌跡を取得
      */
     getReadingTrajectory() {
-        return this.readingTrajectory;
+        return this.readingTrajectory || [];
     }
 
     /**
      * 創発パターンを取得
      */
     getEmergentPatterns() {
-        return this.emergentPatterns;
+        return this.emergentPatterns || [];
     }
 
     /**
@@ -1107,7 +1465,8 @@ class OrganicLayout {
             basicMetrics: {
                 nodes: this.nodes.length,
                 connections: this.connections.length,
-                generation: this.generation
+                generation: this.generation,
+                textLength: this.text.length
             },
             semanticMetrics: {
                 semanticDensity: this.calculateSemanticDensity(),
@@ -1120,7 +1479,33 @@ class OrganicLayout {
                 reflections: this.getSelfReflectionHistory().length
             },
             systemParameters: { ...this.params },
-            currentState: this.captureSystemState()
+            currentState: this.captureSystemState(),
+            memoryUsage: this.getMemoryUsage()
         };
     }
+
+    /**
+     * メモリ使用量の推定
+     */
+    getMemoryUsage() {
+        return {
+            nodes: this.nodes.length * 200, // 1ノード約200バイト
+            connections: this.connections.length * 100, // 1接続約100バイト
+            trajectory: this.readingTrajectory.length * 150, // 1軌跡点約150バイト
+            collocationFields: this.collocationFields.length * 80, // 1フィールド約80バイト
+            emergentPatterns: this.emergentPatterns.length * 120, // 1パターン約120バイト
+            total: (this.nodes.length * 200) + 
+                   (this.connections.length * 100) + 
+                   (this.readingTrajectory.length * 150) + 
+                   (this.collocationFields.length * 80) + 
+                   (this.emergentPatterns.length * 120)
+        };
+    }
+}
+
+// エクスポート
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = OrganicLayout;
+} else if (typeof window !== 'undefined') {
+    window.OrganicLayout = OrganicLayout;
 }
