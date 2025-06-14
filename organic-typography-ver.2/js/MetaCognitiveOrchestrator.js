@@ -429,7 +429,7 @@ class MetaCognitiveOrchestrator {
         const dialecticalInsights = this.detectDialecticalInsights();
         
         // システム境界の越境による洞察
-        const boundary洞察 = this.detectBoundaryTranscendentInsights();
+        const boundaryInsights = this.detectBoundaryTranscendentInsights();
         
         // 自己言及による洞察
         const selfReferentialInsights = this.detectSelfReferentialInsights();
@@ -438,7 +438,7 @@ class MetaCognitiveOrchestrator {
         const integratedInsights = this.integrateAndClassifyInsights([
             ...patternInsights,
             ...dialecticalInsights,
-            ...boundary洞察,
+            ...boundaryInsights,
             ...selfReferentialInsights
         ]);
         
