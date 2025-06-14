@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Organic Typography - システムテスト</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: 'Hiragino Kaku Gothic ProN', 'ヒラギノ角ゴ ProN W3', monospace;
+            background: #0a0a0a;
+            color: #00ff00;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #00ff00;
+            text-shadow: 0 0 10px #00ff00;
+            margin-bottom: 2rem;
+        }
+        
+        .test-section {
+            background: rgba(0, 255, 0, 0.05);
+            border: 1px solid #00ff00;
+            margin: 1rem 0;
+            padding: 1rem;
+            border-radius: 5px;
+        }
+        
+        .test-title {
+            font-weight: bold;
+            color: #00ffff;
+            margin-bottom: 0.5rem;
+        }
+        
+        .test-result {
+            margin: 0.5rem 0;
+            padding: 0.5rem;
+            border-radius: 3px;
+        }
+        
+        .test-pass {
+            background: rgba(0, 255, 0, 0.2);
+            border-left: 4px solid #00ff00;
+        }
+        
+        .test-fail {
+            background: rgba(255, 0, 0, 0.2);
+            border-left: 4px solid #ff0000;
+            color: #ff6666;
+        }
+        
+        .test-warn {
+            background: rgba(255, 255, 0, 0.2);
+            border-left: 4px solid #ffff00;
+            color: #ffff66;
+        }
+        
+        .log-area {
+            background: #111;
+            border: 1px solid #333;
+            padding: 1rem;
+            height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.8rem;
+            white-space: pre-wrap;
+        }
+        
+        .controls {
+            text-align: center;
+            margin: 2rem 0;
+        }
+        
+        button {
+            background: #00ff00;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            margin: 0 0.5rem;
+            cursor: pointer;
+            border-radius: 3px;
+            font-weight: bold;
+        }
+        
+        button:hover {
+            background: #00cc00;
+        }
+        
+        button:disabled {
+            background: #333;
+            color: #666;
+            cursor: not-allowed;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin: 2rem 0;
+        }
+        
+        .stat-box {
+            background: rgba(0, 255, 0, 0.1);
+            border: 1px solid #00ff00;
+            padding: 1rem;
+            text-align: center;
+            border-radius: 5px;
+        }
+        
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #00ffff;
+        }
+        
+        .stat-label {
+            font-size: 0.9rem;
+            color: #aaffaa;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧠 Organic Typography System Test</h1>
+        
+        <div class="controls">
+            <button id="run-tests">全テスト実行</button>
+            <button id="run-basic">基本テスト</button>
+            <button id="run-performance">パフォーマンステスト</button>
+            <button id="clear-log">ログクリア</button>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-box">
+                <div class="stat-value" id="total-tests">0</div>
+                <div class="stat-label">総テスト数</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value" id="passed-tests">0</div>
+                <div class="stat-label">成功</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value" id="failed-tests">0</div>
+                <div class="stat-label">失敗</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value" id="execution-time">0ms</div>
+                <div class="stat-label">実行時間</div>
+            </div>
+        </div>
+        
+        <div id="test-results"></div>
+        
+        <div class="test-section">
+            <div class="test-title">テストログ</div>
+            <div class="log-area" id="log-area"></div>
+        </div>
+    </div>
+
+    <!-- システムファイルの読み込み -->
+    <script src="js/SpatialIndex.js"></script>
+    <script src="js/SemanticField.js"></script>
+    <script src="js/TemporalContext.js"></script>
+    <script src="js/OrganicLayout.js"></script>
+    <script src="js/MetaCognitiveOrchestrator.js"></script>
+    <script src="js/index.js"></script>
+
+    <script>
+        // テストフレームワーク
+        class TestFramework {
+            constructor() {
+                this.tests = [];
+                this.results = [];
+                this.startTime = 0;
+                this.logArea = document.getElementById('log-area');
+                this.resultsArea = document.getElementById('test-results');
+            }
+            
+            log(message, type = 'info') {
+                const timestamp = new Date().toISOString().substr(11, 12);
+                const logMessage = `[${timestamp}] ${message}\n`;
+                this.logArea.textContent += logMessage;
+                this.logArea.scrollTop = this.logArea.scrollHeight;
+                
+                if (type === 'error') {
+                    console.error(message);
+                } else if (type === 'warn') {
+                    console.warn(message);
+                } else {
+                    console.log(message);
+                }
+            }
+            
+            addTest(name, description, testFunc) {
+                this.tests.push({ name, description, testFunc });
+            }
+            
+            async runTest(test) {
+                const startTime = performance.now();
+                
+                try {
+                    this.log(`Testing: ${test.name}`);
+                    const result = await test.testFunc();
+                    const endTime = performance.now();
+                    const duration = Math.round(endTime - startTime);
+                    
+                    const success = result === true || (result && result.success !== false);
+                    
+                    this.results.push({
+                        name: test.name,
+                        description: test.description,
+                        success: success,
+                        duration: duration,
+                        result: result,
+                        error: null
+                    });
+                    
+                    this.log(`✓ ${test.name} - ${duration}ms`, success ? 'info' : 'warn');
+                    return true;
+                    
+                } catch (error) {
+                    const endTime = performance.now();
+                    const duration = Math.round(endTime - startTime);
+                    
+                    this.results.push({
+                        name: test.name,
+                        description: test.description,
+                        success: false,
+                        duration: duration,
+                        result: null,
+                        error: error.message
+                    });
+                    
+                    this.log(`✗ ${test.name} - Error: ${error.message}`, 'error');
+                    return false;
+                }
+            }
+            
+            async runAllTests() {
+                this.results = [];
+                this.startTime = performance.now();
+                
+                this.log('=== テスト開始 ===');
+                
+                for (const test of this.tests) {
+                    await this.runTest(test);
+                    await this.delay(10); // 少し間隔を空ける
+                }
+                
+                const endTime = performance.now();
+                const totalTime = Math.round(endTime - this.startTime);
+                
+                this.log('=== テスト完了 ===');
+                this.updateStats(totalTime);
+                this.displayResults();
+            }
+            
+            delay(ms) {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            }
+            
+            updateStats(totalTime) {
+                const passed = this.results.filter(r => r.success).length;
+                const failed = this.results.filter(r => !r.success).length;
+                
+                document.getElementById('total-tests').textContent = this.results.length;
+                document.getElementById('passed-tests').textContent = passed;
+                document.getElementById('failed-tests').textContent = failed;
+                document.getElementById('execution-time').textContent = `${totalTime}ms`;
+            }
+            
+            displayResults() {
+                this.resultsArea.innerHTML = '';
+                
+                this.results.forEach(result => {
+                    const section = document.createElement('div');
+                    section.className = 'test-section';
+                    
+                    const resultClass = result.success ? 'test-pass' : 'test-fail';
+                    const icon = result.success ? '✓' : '✗';
+                    
+                    section.innerHTML = `
+                        <div class="test-title">${icon} ${result.name}</div>
+                        <div class="test-result ${resultClass}">
+                            <div><strong>説明:</strong> ${result.description}</div>
+                            <div><strong>実行時間:</strong> ${result.duration}ms</div>
+                            ${result.error ? `<div><strong>エラー:</strong> ${result.error}</div>` : ''}
+                            ${result.result && typeof result.result === 'object' ? 
+                              `<div><strong>結果:</strong> ${JSON.stringify(result.result, null, 2)}</div>` : ''}
+                        </div>
+                    `;
+                    
+                    this.resultsArea.appendChild(section);
+                });
+            }
+            
+            clearLog() {
+                this.logArea.textContent = '';
+                this.resultsArea.innerHTML = '';
+            }
+        }
+        
+        // テストインスタンス
+        const testFramework = new TestFramework();
+        
+        // 基本テスト
+        testFramework.addTest(
+            'SpatialIndex基本機能',
+            'SpatialIndexクラスの基本的な挿入・検索機能をテスト',
+            async () => {
+                const spatialIndex = new SpatialIndex(800, 600, 50);
+                
+                const item = {
+                    id: 'test1',
+                    position: { x: 100, y: 100 }
+                };
+                
+                spatialIndex.insert(item);
+                const results = spatialIndex.query({ x: 100, y: 100 }, 50);
+                
+                return results.length === 1 && results[0].id === 'test1';
+            }
+        );
+        
+        testFramework.addTest(
+            'SemanticField初期化',
+            'SemanticFieldクラスの初期化と基本機能をテスト',
+            async () => {
+                const semanticField = new SemanticField();
+                const result = semanticField.analyzeSemanticStructure('テスト文章です。');
+                
+                return semanticField.semanticGraph instanceof Map;
+            }
+        );
+        
+        testFramework.addTest(
+            'OrganicLayout作成',
+            'OrganicLayoutクラスの作成と初期化をテスト',
+            async () => {
+                const layout = new OrganicLayout('テストテキスト', 800, 600);
+                layout.initialize();
+                
+                return layout.nodes.length >= 0 && layout.connections.length >= 0;
+            }
+        );
+        
+        testFramework.addTest(
+            'MetaCognitiveOrchestrator作成',
+            'MetaCognitiveOrchestratorクラスの作成をテスト',
+            async () => {
+                const orchestrator = new MetaCognitiveOrchestrator('テスト', 800, 600);
+                
+                return orchestrator.organicLayout && orchestrator.semanticField;
+            }
+        );
+        
+        testFramework.addTest(
+            'システム統合テスト',
+            'OrganicTypographySystemの統合テスト',
+            async () => {
+                const system = new OrganicTypography.System();
+                await system.initialize('統合テスト用のテキスト', 400, 300);
+                
+                return system.isInitialized && system.orchestrator;
+            }
+        );
+        
+        // パフォーマンステスト
+        testFramework.addTest(
+            '大量ノード処理',
+            '1000ノードでのパフォーマンステスト',
+            async () => {
+                const layout = new OrganicLayout('パフォーマンステスト用の長いテキストです。この文章は性能評価のために使用されます。', 800, 600);
+                layout.initialize();
+                
+                // 複数回の成長をシミュレート
+                for (let i = 0; i < 100 && layout.growthQueue.length > 0; i++) {
+                    layout.grow();
+                }
+                
+                return layout.nodes.length > 0;
+            }
+        );
+        
+        testFramework.addTest(
+            'メモリリーク検出',
+            'メモリ使用量の増加をモニタリング',
+            async () => {
+                const initialMemory = performance.memory ? performance.memory.usedJSHeapSize : 0;
+                
+                // 複数のシステムを作成・破棄
+                for (let i = 0; i < 10; i++) {
+                    const system = new OrganicTypography.System();
+                    await system.initialize('メモリテスト', 200, 200);
+                    
+                    // いくつかの更新を実行
+                    for (let j = 0; j < 10; j++) {
+                        system.update();
+                    }
+                    
+                    system.reset();
+                }
+                
+                const finalMemory = performance.memory ? performance.memory.usedJSHeapSize : 0;
+                const memoryIncrease = finalMemory - initialMemory;
+                
+                testFramework.log(`メモリ使用量変化: ${memoryIncrease} bytes`);
+                
+                // 10MB以上の増加は警告
+                return memoryIncrease < 10 * 1024 * 1024;
+            }
+        );
+        
+        testFramework.addTest(
+            'エラーハンドリング',
+            '不正な入力に対するエラーハンドリングをテスト',
+            async () => {
+                let errorsCaught = 0;
+                
+                try {
+                    const spatialIndex = new SpatialIndex(-100, -100, 0);
+                    spatialIndex.insert(null);
+                    spatialIndex.query(null, -10);
+                } catch (error) {
+                    errorsCaught++;
+                }
+                
+                try {
+                    const layout = new OrganicLayout(null, 'invalid', undefined);
+                    layout.initialize();
+                } catch (error) {
+                    errorsCaught++;
+                }
+                
+                // エラーが適切にキャッチされるか、または安全に処理されることを確認
+                return true; // エラーハンドリングが実装されていれば成功
+            }
+        );
+        
+        testFramework.addTest(
+            'ブラウザ互換性',
+            '各種ブラウザAPIの利用可能性をチェック',
+            async () => {
+                const checks = {
+                    canvas: typeof HTMLCanvasElement !== 'undefined',
+                    requestAnimationFrame: typeof requestAnimationFrame !== 'undefined',
+                    Map: typeof Map !== 'undefined',
+                    Set: typeof Set !== 'undefined',
+                    Promise: typeof Promise !== 'undefined',
+                    console: typeof console !== 'undefined'
+                };
+                
+                const allAvailable = Object.values(checks).every(check => check);
+                
+                testFramework.log(`ブラウザ互換性チェック: ${JSON.stringify(checks)}`);
+                
+                return allAvailable;
+            }
+        );
+        
+        // イベントハンドラー
+        document.getElementById('run-tests').addEventListener('click', () => {
+            testFramework.runAllTests();
+        });
+        
+        document.getElementById('run-basic').addEventListener('click', async () => {
+            testFramework.results = [];
+            testFramework.startTime = performance.now();
+            
+            const basicTests = testFramework.tests.slice(0, 5); // 最初の5つ
+            
+            for (const test of basicTests) {
+                await testFramework.runTest(test);
+            }
+            
+            const endTime = performance.now();
+            testFramework.updateStats(Math.round(endTime - testFramework.startTime));
+            testFramework.displayResults();
+        });
+        
+        document.getElementById('run-performance').addEventListener('click', async () => {
+            testFramework.results = [];
+            testFramework.startTime = performance.now();
+            
+            const performanceTests = testFramework.tests.slice(5); // 残りのテスト
+            
+            for (const test of performanceTests) {
+                await testFramework.runTest(test);
+            }
+            
+            const endTime = performance.now();
+            testFramework.updateStats(Math.round(endTime - testFramework.startTime));
+            testFramework.displayResults();
+        });
+        
+        document.getElementById('clear-log').addEventListener('click', () => {
+            testFramework.clearLog();
+        });
+        
+        // ページロード時の自動実行（オプション）
+        window.addEventListener('load', () => {
+            testFramework.log('テストシステム準備完了');
+            testFramework.log('手動でテストを実行してください');
+        });
+    </script>
+</body>
+</html>

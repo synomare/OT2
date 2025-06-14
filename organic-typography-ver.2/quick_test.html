@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Quick Test - Initialization Fix</title>
+    <style>
+        body { 
+            font-family: monospace; 
+            background: #000; 
+            color: #00ff00; 
+            padding: 20px; 
+        }
+        .status { 
+            border: 1px solid #333; 
+            padding: 10px; 
+            margin: 10px 0; 
+        }
+        .success { border-color: #00ff00; }
+        .error { border-color: #ff0000; color: #ff6666; }
+    </style>
+</head>
+<body>
+    <h1>Initialization Test</h1>
+    <div id="results"></div>
+    
+    <!-- Load modules in correct order -->
+    <script src="js/SpatialIndex.js"></script>
+    <script src="js/SemanticField.js"></script>
+    <script src="js/TemporalContext.js"></script>
+    <script src="js/OrganicLayout.js"></script>
+    <script src="js/MetaCognitiveOrchestrator.js"></script>
+    <script src="js/index.js"></script>
+    
+    <script>
+        const results = document.getElementById('results');
+        
+        function addResult(message, isSuccess = true) {
+            const div = document.createElement('div');
+            div.className = `status ${isSuccess ? 'success' : 'error'}`;
+            div.textContent = message;
+            results.appendChild(div);
+        }
+        
+        // Test 1: Check if classes are loaded
+        addResult('Testing class loading...');
+        
+        try {
+            addResult(`✓ SpatialIndex: ${typeof SpatialIndex !== 'undefined' ? 'loaded' : 'missing'}`);
+            addResult(`✓ SemanticField: ${typeof SemanticField !== 'undefined' ? 'loaded' : 'missing'}`);
+            addResult(`✓ TemporalContext: ${typeof TemporalContext !== 'undefined' ? 'loaded' : 'missing'}`);
+            addResult(`✓ OrganicLayout: ${typeof OrganicLayout !== 'undefined' ? 'loaded' : 'missing'}`);
+            addResult(`✓ MetaCognitiveOrchestrator: ${typeof MetaCognitiveOrchestrator !== 'undefined' ? 'loaded' : 'missing'}`);
+            addResult(`✓ OrganicTypography: ${typeof OrganicTypography !== 'undefined' ? 'loaded' : 'missing'}`);
+        } catch (error) {
+            addResult(`✗ Class loading check failed: ${error.message}`, false);
+        }
+        
+        // Test 2: Try creating OrganicLayout
+        try {
+            addResult('Testing OrganicLayout creation...');
+            const layout = new OrganicLayout('テスト', 400, 300);
+            addResult('✓ OrganicLayout created successfully');
+        } catch (error) {
+            addResult(`✗ OrganicLayout creation failed: ${error.message}`, false);
+        }
+        
+        // Test 3: Try creating MetaCognitiveOrchestrator
+        try {
+            addResult('Testing MetaCognitiveOrchestrator creation...');
+            const orchestrator = new MetaCognitiveOrchestrator('テスト', 400, 300);
+            addResult('✓ MetaCognitiveOrchestrator created successfully');
+        } catch (error) {
+            addResult(`✗ MetaCognitiveOrchestrator creation failed: ${error.message}`, false);
+        }
+        
+        // Test 4: Try creating full system
+        try {
+            addResult('Testing full system creation...');
+            
+            // Create a container div for the demo
+            const testContainer = document.createElement('div');
+            testContainer.id = 'test-container';
+            testContainer.style.width = '400px';
+            testContainer.style.height = '300px';
+            testContainer.style.border = '1px solid #333';
+            testContainer.style.display = 'none'; // Hidden for testing
+            document.body.appendChild(testContainer);
+            
+            OrganicTypography.createDemo('test-container', 'テスト用文章')
+                .then(demo => {
+                    addResult('✓ Full system demo created successfully');
+                    
+                    // Test starting the system
+                    try {
+                        demo.start();
+                        addResult('✓ System started successfully');
+                        
+                        // Stop after a short time
+                        setTimeout(() => {
+                            demo.pause();
+                            addResult('✓ System paused successfully');
+                            
+                            // Clean up
+                            document.body.removeChild(testContainer);
+                        }, 1000);
+                    } catch (error) {
+                        addResult(`✗ System start failed: ${error.message}`, false);
+                    }
+                })
+                .catch(error => {
+                    addResult(`✗ Full system creation failed: ${error.message}`, false);
+                });
+        } catch (error) {
+            addResult(`✗ Full system test failed: ${error.message}`, false);
+        }
+    </script>
+</body>
+</html>

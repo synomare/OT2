@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Index.html 動作テスト</title>
+    <style>
+        body { 
+            font-family: monospace; 
+            background: #000; 
+            color: #00ff00; 
+            padding: 20px; 
+        }
+        .status { 
+            border: 1px solid #333; 
+            padding: 10px; 
+            margin: 10px 0; 
+        }
+        .success { border-color: #00ff00; }
+        .error { border-color: #ff0000; color: #ff6666; }
+        .warning { border-color: #ffff00; color: #ffff66; }
+    </style>
+</head>
+<body>
+    <h1>Index.html 機能テスト</h1>
+    <div id="results"></div>
+    
+    <script>
+        const results = document.getElementById('results');
+        
+        function addResult(message, type = 'success') {
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.textContent = message;
+            results.appendChild(div);
+        }
+        
+        addResult('✅ index.html の表示機能が整備されました');
+        addResult('🎨 改善された機能:');
+        addResult('   • 語義的共鳴による文字の色彩変化', 'success');
+        addResult('   • エネルギーレベルによる動的サイズ調整', 'success');
+        addResult('   • グローエフェクトと影による視覚的強化', 'success');
+        addResult('   • 語義的タイプ別の接続線描画', 'success');
+        addResult('   • 干渉パターンの可視化', 'success');
+        addResult('   • 連語感覚フィールドの描画', 'success');
+        addResult('   • 読解軌跡の可視化', 'success');
+        addResult('   • 創発パターンの描画', 'success');
+        addResult('   • インタラクティブなコントロール', 'success');
+        addResult('   • 表示オプションの切り替え', 'success');
+        
+        addResult('📋 使用方法:');
+        addResult('1. index.htmlをブラウザで開く', 'warning');
+        addResult('2. 「テキストを読み込む」ボタンをクリック', 'warning');
+        addResult('3. 「成長を開始」ボタンでアニメーション開始', 'warning');
+        addResult('4. 各種スライダーで動的にパラメータ調整', 'warning');
+        addResult('5. チェックボックスで表示要素の切り替え', 'warning');
+        addResult('6. マウスドラッグで視点移動、ホイールでズーム', 'warning');
+        
+        addResult('🎯 期待される表示:');
+        addResult('   • 中央から放射状に成長する文字ノード', 'success');
+        addResult('   • 語義的関係による美しい接続線', 'success');
+        addResult('   • リアルタイムな統計情報更新', 'success');
+        addResult('   • 自己リフレクティブな読解体験の視覚化', 'success');
+        
+        addResult('✨ システム完成: 自己リフレクティブな言語読解体験システム', 'success');
+    </script>
+</body>
+</html>

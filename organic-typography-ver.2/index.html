@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>有機的日本語組版システム</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+            background: #f5f5f5;
+            overflow: hidden;
+        }
+
+        #app {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            background: #ffffff;
+            cursor: grab;
+        }
+
+        #canvas-container:active {
+            cursor: grabbing;
+        }
+
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            max-width: 300px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        .control-group label {
+            display: block;
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .control-group input[type="range"] {
+            width: 100%;
+        }
+
+        .control-group button {
+            padding: 6px 12px;
+            margin-right: 5px;
+            border: none;
+            background: #2196f3;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .control-group button:hover {
+            background: #1976d2;
+        }
+
+        .control-group button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        #text-input {
+            width: 100%;
+            height: 80px;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 12px;
+            resize: none;
+        }
+
+        #stats {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-family: monospace;
+        }
+
+        #stats div {
+            margin-bottom: 5px;
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #2196f3;
+            font-size: 1.2rem;
+            display: none;
+        }
+
+        .error {
+            color: #ff0000;
+            margin-top: 10px;
+            font-size: 12px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div id="canvas-container">
+            <div class="loading" id="loading">システムを初期化中...</div>
+        </div>
+        
+        <div id="controls">
+            <div class="control-group">
+                <label>ズーム: <span id="zoom-value">1.0</span>x</label>
+                <input type="range" id="zoom-slider" min="0.1" max="10" step="0.1" value="1">
+            </div>
+            <div class="control-group">
+                <button id="play-growth">成長を開始</button>
+                <button id="pause-growth" disabled>一時停止</button>
+                <button id="reset-growth">リセット</button>
+            </div>
+            <div class="control-group">
+                <label>成長速度: <span id="speed-value">50</span></label>
+                <input type="range" id="speed-slider" min="1" max="100" value="50">
+            </div>
+            <div class="control-group">
+                <label>語義的引力: <span id="semantic-gravity-value">0.6</span></label>
+                <input type="range" id="semantic-gravity-slider" min="0" max="1" step="0.1" value="0.6">
+            </div>
+            <div class="control-group">
+                <label>干渉振幅: <span id="interference-value">0.4</span></label>
+                <input type="range" id="interference-slider" min="0" max="1" step="0.1" value="0.4">
+            </div>
+            <div class="control-group">
+                <label>表示オプション:</label>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <label style="font-size: 11px;"><input type="checkbox" id="show-connections" checked> 接続</label>
+                    <label style="font-size: 11px;"><input type="checkbox" id="show-trajectory" checked> 軌跡</label>
+                    <label style="font-size: 11px;"><input type="checkbox" id="show-fields" checked> フィールド</label>
+                    <label style="font-size: 11px;"><input type="checkbox" id="show-patterns" checked> パターン</label>
+                </div>
+            </div>
+            <div class="control-group">
+                <textarea id="text-input" placeholder="テキストを入力...">言語を読むとは何か。読む身体が時間と歴史を折り畳みながら、意味の枝を探索する。視覚と語義の干渉パターンが自己言及的な読解体験を生成する。</textarea>
+                <button id="load-text">テキストを読み込む</button>
+                <div class="error" id="error-message"></div>
+            </div>
+        </div>
+        
+        <div id="stats">
+            <div>文字数: <span id="char-count">0</span></div>
+            <div>ノード数: <span id="node-count">0</span></div>
+            <div>接続数: <span id="connection-count">0</span></div>
+            <div>世代: <span id="generation">0</span></div>
+            <div>FPS: <span id="fps">0</span></div>
+        </div>
+    </div>
+    
+    <!-- システムファイルの読み込み -->
+    <script src="js/SpatialIndex.js"></script>
+    <script src="js/SemanticField.js"></script>
+    <script src="js/TemporalContext.js"></script>
+    <script src="js/OrganicLayout.js"></script>
+    <script src="js/MetaCognitiveOrchestrator.js"></script>
+    <script src="js/index.js"></script>
+    
+    <script>
+        // アプリケーションクラス
+        class OrganicTypographyApp {
+            constructor() {
+                this.system = null;
+                this.canvas = null;
+                this.ctx = null;
+                this.animationId = null;
+                this.isRunning = false;
+                this.zoom = 1.0;
+                this.offset = { x: 0, y: 0 };
+                this.isDragging = false;
+                this.dragStart = { x: 0, y: 0 };
+                this.lastTime = 0;
+                this.frameCount = 0;
+                this.fps = 0;
+                
+                this.init();
+            }
+
+            async init() {
+                try {
+                    this.showLoading(true);
+                    this.showError('');
+                    
+                    // キャンバスの作成
+                    this.createCanvas();
+                    
+                    // イベントリスナーの設定
+                    this.setupEventListeners();
+                    
+                    // 初期テキストでシステムを作成
+                    await this.loadText();
+                    
+                    this.showLoading(false);
+                    console.log('✅ アプリケーション初期化完了');
+                    
+                } catch (error) {
+                    this.showLoading(false);
+                    this.showError('初期化エラー: ' + error.message);
+                    console.error('Initialization error:', error);
+                }
+            }
+
+            createCanvas() {
+                const container = document.getElementById('canvas-container');
+                this.canvas = document.createElement('canvas');
+                this.canvas.style.width = '100%';
+                this.canvas.style.height = '100%';
+                container.appendChild(this.canvas);
+                
+                this.ctx = this.canvas.getContext('2d');
+                this.resizeCanvas();
+                
+                // リサイズハンドラー
+                window.addEventListener('resize', () => this.resizeCanvas());
+            }
+
+            resizeCanvas() {
+                const container = document.getElementById('canvas-container');
+                this.canvas.width = container.clientWidth;
+                this.canvas.height = container.clientHeight;
+            }
+
+            setupEventListeners() {
+                // コントロールボタン
+                document.getElementById('load-text').addEventListener('click', () => this.loadText());
+                document.getElementById('play-growth').addEventListener('click', () => this.startGrowth());
+                document.getElementById('pause-growth').addEventListener('click', () => this.pauseGrowth());
+                document.getElementById('reset-growth').addEventListener('click', () => this.resetGrowth());
+                
+                // スライダー
+                document.getElementById('zoom-slider').addEventListener('input', (e) => {
+                    this.zoom = parseFloat(e.target.value);
+                    document.getElementById('zoom-value').textContent = this.zoom.toFixed(1);
+                });
+                
+                document.getElementById('speed-slider').addEventListener('input', (e) => {
+                    const value = parseInt(e.target.value);
+                    document.getElementById('speed-value').textContent = value;
+                    
+                    if (this.system && this.system.orchestrator && this.system.orchestrator.organicLayout) {
+                        const speedFactor = value / 50;
+                        this.system.orchestrator.organicLayout.params.energyDecay = 0.3 * speedFactor;
+                    }
+                });
+                
+                document.getElementById('semantic-gravity-slider').addEventListener('input', (e) => {
+                    const value = parseFloat(e.target.value);
+                    document.getElementById('semantic-gravity-value').textContent = value.toFixed(1);
+                    
+                    if (this.system && this.system.orchestrator && this.system.orchestrator.organicLayout) {
+                        this.system.orchestrator.organicLayout.params.semanticGravity = value;
+                    }
+                });
+                
+                document.getElementById('interference-slider').addEventListener('input', (e) => {
+                    const value = parseFloat(e.target.value);
+                    document.getElementById('interference-value').textContent = value.toFixed(1);
+                    
+                    if (this.system && this.system.orchestrator && this.system.orchestrator.organicLayout) {
+                        this.system.orchestrator.organicLayout.params.interferenceAmplitude = value;
+                    }
+                });
+                
+                // 表示オプション
+                this.showConnections = true;
+                this.showTrajectory = true;
+                this.showFields = true;
+                this.showPatterns = true;
+                
+                document.getElementById('show-connections').addEventListener('change', (e) => {
+                    this.showConnections = e.target.checked;
+                    if (!this.isRunning) this.render();
+                });
+                
+                document.getElementById('show-trajectory').addEventListener('change', (e) => {
+                    this.showTrajectory = e.target.checked;
+                    if (!this.isRunning) this.render();
+                });
+                
+                document.getElementById('show-fields').addEventListener('change', (e) => {
+                    this.showFields = e.target.checked;
+                    if (!this.isRunning) this.render();
+                });
+                
+                document.getElementById('show-patterns').addEventListener('change', (e) => {
+                    this.showPatterns = e.target.checked;
+                    if (!this.isRunning) this.render();
+                });
+                
+                // マウスイベント（パン機能）
+                this.canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
+                this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+                this.canvas.addEventListener('mouseup', () => this.handleMouseUp());
+                this.canvas.addEventListener('wheel', (e) => this.handleWheel(e));
+            }
+
+            async loadText() {
+                try {
+                    this.showError('');
+                    const text = document.getElementById('text-input').value || 'デフォルトテキスト';
+                    
+                    if (this.system) {
+                        this.pauseGrowth();
+                    }
+                    
+                    // OrganicTypographyシステムの作成
+                    if (typeof OrganicTypography !== 'undefined' && OrganicTypography.create) {
+                        this.system = await OrganicTypography.create(
+                            text,
+                            this.canvas.width * 2, // より大きなキャンバスサイズで成長余地を提供
+                            this.canvas.height * 2,
+                            {
+                                metaCognitiveDepth: 0.7,
+                                semanticGravity: 0.6,
+                                interferenceAmplitude: 0.4
+                            }
+                        );
+                        
+                        // 表示の中央配置を調整
+                        this.offset = { 
+                            x: -this.canvas.width / 2, 
+                            y: -this.canvas.height / 2 
+                        };
+                        
+                        // 初期描画
+                        this.render();
+                        this.updateStats();
+                        
+                        console.log('✅ テキスト読み込み完了');
+                    } else {
+                        throw new Error('OrganicTypography システムが利用できません');
+                    }
+                    
+                } catch (error) {
+                    this.showError('テキスト読み込みエラー: ' + error.message);
+                    console.error('Load text error:', error);
+                }
+            }
+
+            startGrowth() {
+                if (!this.system) {
+                    this.showError('システムが初期化されていません');
+                    return;
+                }
+                
+                try {
+                    this.isRunning = true;
+                    this.system.start();
+                    
+                    document.getElementById('play-growth').disabled = true;
+                    document.getElementById('pause-growth').disabled = false;
+                    
+                    this.animate();
+                    console.log('▶️ 成長開始');
+                    
+                } catch (error) {
+                    this.showError('成長開始エラー: ' + error.message);
+                    console.error('Start growth error:', error);
+                }
+            }
+
+            pauseGrowth() {
+                if (!this.system) return;
+                
+                this.isRunning = false;
+                this.system.pause();
+                
+                if (this.animationId) {
+                    cancelAnimationFrame(this.animationId);
+                    this.animationId = null;
+                }
+                
+                document.getElementById('play-growth').disabled = false;
+                document.getElementById('pause-growth').disabled = true;
+                
+                console.log('⏸️ 成長一時停止');
+            }
+
+            resetGrowth() {
+                if (!this.system) return;
+                
+                this.pauseGrowth();
+                this.system.reset();
+                
+                // オフセットとズームをリセット
+                this.offset = { x: 0, y: 0 };
+                this.zoom = 1.0;
+                document.getElementById('zoom-slider').value = 1.0;
+                document.getElementById('zoom-value').textContent = '1.0';
+                
+                this.render();
+                this.updateStats();
+                
+                console.log('🔄 成長リセット');
+            }
+
+            animate() {
+                if (!this.isRunning) return;
+                
+                // FPS計算
+                this.calculateFPS();
+                
+                // システム更新
+                this.system.update();
+                
+                // 描画
+                this.render();
+                
+                // 統計更新
+                this.updateStats();
+                
+                this.animationId = requestAnimationFrame(() => this.animate());
+            }
+
+            render() {
+                if (!this.system || !this.system.orchestrator || !this.system.orchestrator.organicLayout) {
+                    return;
+                }
+                
+                const layout = this.system.orchestrator.organicLayout;
+                
+                // キャンバスクリア（グラデーション背景）
+                const gradient = this.ctx.createRadialGradient(
+                    this.canvas.width / 2, this.canvas.height / 2, 0,
+                    this.canvas.width / 2, this.canvas.height / 2, Math.max(this.canvas.width, this.canvas.height) / 2
+                );
+                gradient.addColorStop(0, '#001122');
+                gradient.addColorStop(1, '#000000');
+                this.ctx.fillStyle = gradient;
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                // 変換の適用
+                this.ctx.save();
+                this.ctx.translate(this.canvas.width / 2, this.canvas.height / 2);
+                this.ctx.scale(this.zoom, this.zoom);
+                this.ctx.translate(-this.canvas.width / 2 + this.offset.x, -this.canvas.height / 2 + this.offset.y);
+                
+                // 連語感覚フィールドの描画
+                if (this.showFields && layout.collocationFields && layout.collocationFields.length > 0) {
+                    this.drawCollocationFields(layout.collocationFields);
+                }
+                
+                // 読解軌跡の描画
+                if (this.showTrajectory && layout.readingTrajectory && layout.readingTrajectory.length > 1) {
+                    this.drawReadingTrajectory(layout.readingTrajectory);
+                }
+                
+                // 接続の描画（後ろから前へ）
+                if (this.showConnections) {
+                    layout.connections.forEach(connection => {
+                        this.drawConnection(connection, layout.nodes);
+                    });
+                }
+                
+                // ノードの描画（常に表示）
+                layout.nodes.forEach(node => {
+                    this.drawNode(node);
+                });
+                
+                // 創発パターンの描画
+                if (this.showPatterns && layout.emergentPatterns && layout.emergentPatterns.length > 0) {
+                    this.drawEmergentPatterns(layout.emergentPatterns);
+                }
+                
+                this.ctx.restore();
+            }
+
+            drawNode(node) {
+                if (!node || !node.position) return;
+                
+                const ctx = this.ctx;
+                
+                // エネルギーと語義的共鳴による色の変化
+                const energy = Math.max(0, Math.min(100, node.energy || 50));
+                const resonance = Math.max(0, Math.min(1, node.semanticResonance || 0));
+                
+                // 語義的共鳴による色の変化
+                const hue = 200 + resonance * 60; // 青から紫へ
+                const saturation = 50 + resonance * 50;
+                const lightness = 30 + (energy / 100) * 40;
+                
+                // エネルギーによるサイズの変化
+                const baseSize = 4 + energy / 20;
+                const size = baseSize * (1 + resonance * 0.5);
+                
+                // グローエフェクト
+                if (resonance > 0.3) {
+                    ctx.save();
+                    ctx.shadowColor = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+                    ctx.shadowBlur = resonance * 20;
+                    ctx.beginPath();
+                    ctx.arc(node.position.x, node.position.y, size + 2, 0, Math.PI * 2);
+                    ctx.fillStyle = `hsla(${hue}, ${saturation}%, ${lightness}%, 0.3)`;
+                    ctx.fill();
+                    ctx.restore();
+                }
+                
+                // メインノードの描画
+                ctx.fillStyle = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+                ctx.strokeStyle = `hsl(${hue}, ${saturation}%, ${Math.max(10, lightness - 20)}%)`;
+                ctx.lineWidth = 1;
+                
+                ctx.beginPath();
+                ctx.arc(node.position.x, node.position.y, size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+                
+                // 文字の描画
+                if (node.char) {
+                    ctx.fillStyle = energy > 30 ? '#ffffff' : '#cccccc';
+                    const fontSize = Math.max(8, Math.min(24, 10 + energy / 10));
+                    ctx.font = `${fontSize}px "Noto Sans JP", serif`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    
+                    // 文字の影を追加
+                    if (resonance > 0.5) {
+                        ctx.save();
+                        ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+                        ctx.shadowOffsetX = 1;
+                        ctx.shadowOffsetY = 1;
+                        ctx.shadowBlur = 2;
+                        ctx.fillText(node.char, node.position.x, node.position.y);
+                        ctx.restore();
+                    } else {
+                        ctx.fillText(node.char, node.position.x, node.position.y);
+                    }
+                }
+                
+                // 連語強度の可視化
+                if (node.collocationStrength && node.collocationStrength > 0.3) {
+                    ctx.save();
+                    ctx.strokeStyle = `hsla(60, 100%, 70%, ${node.collocationStrength})`;
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([2, 2]);
+                    ctx.beginPath();
+                    ctx.arc(node.position.x, node.position.y, size + 10, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+            }
+
+            drawConnection(connection, nodes) {
+                if (!connection || !connection.from || !connection.to) return;
+                
+                const fromNode = nodes.find(n => n.id === connection.from);
+                const toNode = nodes.find(n => n.id === connection.to);
+                
+                if (!fromNode || !toNode) return;
+                
+                const ctx = this.ctx;
+                
+                // 語義的タイプによる色の変化
+                let strokeColor, lineWidth, opacity;
+                
+                if (connection.semanticType) {
+                    switch (connection.semanticType) {
+                        case 'collocation':
+                            strokeColor = 'hsl(60, 100%, 70%)';
+                            lineWidth = 3;
+                            opacity = 0.8;
+                            break;
+                        case 'similarity':
+                            strokeColor = 'hsl(200, 80%, 60%)';
+                            lineWidth = 2;
+                            opacity = 0.6;
+                            break;
+                        case 'contrast':
+                            strokeColor = 'hsl(340, 80%, 60%)';
+                            lineWidth = 2;
+                            opacity = 0.5;
+                            break;
+                        default:
+                            strokeColor = 'hsl(220, 50%, 70%)';
+                            lineWidth = 1;
+                            opacity = 0.3;
+                    }
+                } else {
+                    // フォールバック: 視覚的タイプによる色
+                    strokeColor = connection.type === 'primary' ? 'hsl(210, 80%, 60%)' :
+                                 connection.type === 'secondary' ? 'hsl(210, 60%, 70%)' :
+                                 'hsl(210, 40%, 80%)';
+                    lineWidth = connection.type === 'primary' ? 2 : 1;
+                    opacity = connection.type === 'primary' ? 0.6 : 
+                             connection.type === 'secondary' ? 0.4 : 0.2;
+                }
+                
+                // 共鳴による強度調整
+                const resonance = connection.resonance || 0;
+                opacity *= (0.5 + resonance * 0.5);
+                
+                ctx.strokeStyle = strokeColor.replace('hsl', 'hsla').replace(')', `, ${opacity})`);
+                ctx.lineWidth = lineWidth;
+                
+                // 干渉パターンの可視化
+                if (connection.interference && connection.interference.amplitude > 0.2) {
+                    ctx.save();
+                    ctx.shadowColor = strokeColor;
+                    ctx.shadowBlur = connection.interference.amplitude * 10;
+                    
+                    // 波状のラインダッシュ
+                    const dashLength = 5 + connection.interference.frequency * 3;
+                    ctx.setLineDash([dashLength, dashLength / 2]);
+                }
+                
+                ctx.beginPath();
+                ctx.moveTo(fromNode.position.x, fromNode.position.y);
+                
+                // 曲線の描画
+                const curvature = connection.curvature || 0;
+                if (curvature > 0.1) {
+                    const midX = (fromNode.position.x + toNode.position.x) / 2;
+                    const midY = (fromNode.position.y + toNode.position.y) / 2;
+                    
+                    // 語義的曲率の適用
+                    const offset = curvature * 50;
+                    const dx = toNode.position.x - fromNode.position.x;
+                    const dy = toNode.position.y - fromNode.position.y;
+                    const perpX = -dy / Math.sqrt(dx * dx + dy * dy) * offset;
+                    const perpY = dx / Math.sqrt(dx * dx + dy * dy) * offset;
+                    
+                    ctx.quadraticCurveTo(
+                        midX + perpX, midY + perpY,
+                        toNode.position.x, toNode.position.y
+                    );
+                } else {
+                    ctx.lineTo(toNode.position.x, toNode.position.y);
+                }
+                
+                ctx.stroke();
+                
+                if (connection.interference) {
+                    ctx.restore();
+                }
+            }
+
+            updateStats() {
+                if (!this.system || !this.system.orchestrator || !this.system.orchestrator.organicLayout) {
+                    return;
+                }
+                
+                const layout = this.system.orchestrator.organicLayout;
+                
+                document.getElementById('char-count').textContent = layout.text.length;
+                document.getElementById('node-count').textContent = layout.nodes.length;
+                document.getElementById('connection-count').textContent = layout.connections.length;
+                document.getElementById('generation').textContent = layout.generation;
+                document.getElementById('fps').textContent = this.fps;
+                
+                // 追加統計情報
+                const semanticDensity = layout.calculateSemanticDensity ? layout.calculateSemanticDensity() : 0;
+                const avgResonance = layout.calculateAverageSemanticResonance ? layout.calculateAverageSemanticResonance() : 0;
+                
+                // 統計情報が表示されていない場合は追加
+                if (!document.getElementById('semantic-density')) {
+                    const statsEl = document.getElementById('stats');
+                    statsEl.innerHTML += `
+                        <div>語義密度: <span id="semantic-density">0.000</span></div>
+                        <div>平均共鳴: <span id="avg-resonance">0.000</span></div>
+                        <div>連語フィールド: <span id="collocation-fields">0</span></div>
+                    `;
+                }
+                
+                document.getElementById('semantic-density').textContent = semanticDensity.toFixed(3);
+                document.getElementById('avg-resonance').textContent = avgResonance.toFixed(3);
+                document.getElementById('collocation-fields').textContent = 
+                    layout.collocationFields ? layout.collocationFields.length : 0;
+            }
+
+            calculateFPS() {
+                this.frameCount++;
+                const currentTime = performance.now();
+                
+                if (currentTime - this.lastTime >= 1000) {
+                    this.fps = this.frameCount;
+                    this.frameCount = 0;
+                    this.lastTime = currentTime;
+                }
+            }
+
+            // マウスイベントハンドラー
+            handleMouseDown(e) {
+                this.isDragging = true;
+                this.dragStart = { x: e.clientX, y: e.clientY };
+                this.canvas.style.cursor = 'grabbing';
+            }
+
+            handleMouseMove(e) {
+                if (!this.isDragging) return;
+                
+                const dx = e.clientX - this.dragStart.x;
+                const dy = e.clientY - this.dragStart.y;
+                
+                this.offset.x += dx / this.zoom;
+                this.offset.y += dy / this.zoom;
+                
+                this.dragStart = { x: e.clientX, y: e.clientY };
+                
+                if (!this.isRunning) {
+                    this.render();
+                }
+            }
+
+            handleMouseUp() {
+                this.isDragging = false;
+                this.canvas.style.cursor = 'grab';
+            }
+
+            handleWheel(e) {
+                e.preventDefault();
+                
+                const scaleFactor = e.deltaY > 0 ? 0.9 : 1.1;
+                const newZoom = Math.max(0.1, Math.min(10, this.zoom * scaleFactor));
+                
+                this.zoom = newZoom;
+                document.getElementById('zoom-slider').value = this.zoom;
+                document.getElementById('zoom-value').textContent = this.zoom.toFixed(1);
+                
+                if (!this.isRunning) {
+                    this.render();
+                }
+            }
+
+            // === 追加描画メソッド群 ===
+
+            drawCollocationFields(fields) {
+                if (!fields || fields.length === 0) return;
+                
+                const ctx = this.ctx;
+                
+                fields.forEach(field => {
+                    if (!field.geometry || field.geometry.length === 0) return;
+                    
+                    ctx.save();
+                    
+                    // 連語感覚フィールドの描画
+                    const intensity = field.intensity || 0.3;
+                    ctx.fillStyle = `rgba(255, 200, 100, ${intensity * 0.2})`;
+                    ctx.strokeStyle = `rgba(255, 200, 100, ${intensity * 0.5})`;
+                    ctx.lineWidth = 1;
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(field.geometry[0].x, field.geometry[0].y);
+                    
+                    for (let i = 1; i < field.geometry.length; i++) {
+                        ctx.lineTo(field.geometry[i].x, field.geometry[i].y);
+                    }
+                    
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                    
+                    ctx.restore();
+                });
+            }
+
+            drawReadingTrajectory(trajectory) {
+                if (!trajectory || trajectory.length < 2) return;
+                
+                const ctx = this.ctx;
+                
+                ctx.save();
+                ctx.strokeStyle = 'rgba(200, 100, 255, 0.4)';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 5]);
+                
+                // 読解軌跡のパス描画
+                ctx.beginPath();
+                
+                for (let i = 0; i < trajectory.length - 1; i++) {
+                    const point = trajectory[i];
+                    if (!point.from || !point.from.position) continue;
+                    
+                    if (i === 0) {
+                        ctx.moveTo(point.from.position.x, point.from.position.y);
+                    } else {
+                        ctx.lineTo(point.from.position.x, point.from.position.y);
+                    }
+                }
+                
+                ctx.stroke();
+                
+                // 時間的な深度を示すグラデーション
+                trajectory.forEach((point, index) => {
+                    if (!point.from || !point.from.position) return;
+                    
+                    const age = (trajectory.length - index) / trajectory.length;
+                    const alpha = age * 0.6;
+                    
+                    ctx.fillStyle = `rgba(200, 100, 255, ${alpha})`;
+                    ctx.beginPath();
+                    ctx.arc(point.from.position.x, point.from.position.y, 2, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+                
+                ctx.restore();
+            }
+
+            drawEmergentPatterns(patterns) {
+                if (!patterns || patterns.length === 0) return;
+                
+                const ctx = this.ctx;
+                
+                patterns.forEach(pattern => {
+                    ctx.save();
+                    
+                    switch (pattern.type) {
+                        case 'semantic_cluster':
+                            this.drawSemanticCluster(pattern);
+                            break;
+                        case 'semantic_bridge':
+                            this.drawSemanticBridge(pattern);
+                            break;
+                        case 'reading_spiral':
+                            this.drawReadingSpiral(pattern);
+                            break;
+                    }
+                    
+                    ctx.restore();
+                });
+            }
+
+            drawSemanticCluster(pattern) {
+                if (!pattern.elements || pattern.elements.length === 0) return;
+                
+                const ctx = this.ctx;
+                
+                // クラスターの重心を計算
+                let centerX = 0, centerY = 0;
+                let validElements = 0;
+                
+                pattern.elements.forEach(element => {
+                    if (element.position) {
+                        centerX += element.position.x;
+                        centerY += element.position.y;
+                        validElements++;
+                    }
+                });
+                
+                if (validElements === 0) return;
+                
+                centerX /= validElements;
+                centerY /= validElements;
+                
+                // クラスターの境界を描画
+                const radius = Math.sqrt(validElements) * 20;
+                const strength = pattern.strength || 0.5;
+                
+                ctx.strokeStyle = `rgba(100, 255, 100, ${strength * 0.6})`;
+                ctx.fillStyle = `rgba(100, 255, 100, ${strength * 0.1})`;
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 5]);
+                
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+            }
+
+            drawSemanticBridge(pattern) {
+                if (!pattern.connection) return;
+                
+                const ctx = this.ctx;
+                
+                // 架橋の強調表示
+                const strength = pattern.strength || 0.5;
+                
+                ctx.strokeStyle = `rgba(255, 255, 100, ${strength})`;
+                ctx.lineWidth = 4;
+                ctx.shadowColor = 'rgba(255, 255, 100, 0.8)';
+                ctx.shadowBlur = 10;
+                
+                // 架橋パスの描画は個別実装が必要
+                // ここでは簡易的な表示
+                ctx.beginPath();
+                ctx.arc(pattern.connection.x || 0, pattern.connection.y || 0, 10, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+
+            drawReadingSpiral(pattern) {
+                if (!pattern.trajectory || pattern.trajectory.length < 3) return;
+                
+                const ctx = this.ctx;
+                
+                // 螺旋の描画
+                const complexity = pattern.complexity || 1;
+                
+                ctx.strokeStyle = `rgba(255, 150, 255, ${Math.min(1, complexity / 10)})`;
+                ctx.lineWidth = 2;
+                ctx.shadowColor = 'rgba(255, 150, 255, 0.5)';
+                ctx.shadowBlur = 5;
+                
+                ctx.beginPath();
+                
+                for (let i = 0; i < pattern.trajectory.length; i++) {
+                    const point = pattern.trajectory[i];
+                    if (!point.x && !point.y) continue;
+                    
+                    if (i === 0) {
+                        ctx.moveTo(point.x, point.y);
+                    } else {
+                        ctx.lineTo(point.x, point.y);
+                    }
+                }
+                
+                ctx.stroke();
+            }
+
+            // ユーティリティメソッド
+            showLoading(show) {
+                document.getElementById('loading').style.display = show ? 'block' : 'none';
+            }
+
+            showError(message) {
+                const errorEl = document.getElementById('error-message');
+                errorEl.textContent = message;
+                errorEl.style.display = message ? 'block' : 'none';
+            }
+        }
+
+        // アプリケーションの起動
+        document.addEventListener('DOMContentLoaded', () => {
+            window.app = new OrganicTypographyApp();
+        });
+    </script>
+</body>
+</html>

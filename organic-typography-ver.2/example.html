@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Organic Typography - 自己リフレクティブな言語読解体験</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: 'Hiragino Kaku Gothic ProN', 'ヒラギノ角ゴ ProN W3', sans-serif;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+            color: #ffffff;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            text-align: center;
+            font-size: 2rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(45deg, #4fc3f7, #29b6f6, #03a9f4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .description {
+            text-align: center;
+            margin-bottom: 2rem;
+            font-size: 1.1rem;
+            line-height: 1.6;
+            color: #b0b0b0;
+        }
+        
+        .canvas-container {
+            width: 100%;
+            height: 600px;
+            border: 2px solid #333;
+            border-radius: 8px;
+            background: radial-gradient(circle at center, #1a1a2e 0%, #0f0f23 100%);
+            margin-bottom: 2rem;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            background: linear-gradient(45deg, #4fc3f7, #29b6f6);
+            color: white;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(79, 195, 247, 0.3);
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .status {
+            text-align: center;
+            margin-bottom: 1rem;
+            font-family: monospace;
+            color: #4fc3f7;
+        }
+        
+        .info-panel {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+        
+        .info-section {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 1.5rem;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .info-section h3 {
+            margin-top: 0;
+            color: #4fc3f7;
+            border-bottom: 1px solid rgba(79, 195, 247, 0.3);
+            padding-bottom: 0.5rem;
+        }
+        
+        .metrics {
+            font-family: monospace;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+        
+        .loading {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #4fc3f7;
+            font-size: 1.2rem;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .loading {
+            animation: pulse 2s infinite;
+        }
+        
+        .error {
+            color: #ff6b6b;
+            text-align: center;
+            margin: 1rem 0;
+            padding: 1rem;
+            background: rgba(255, 107, 107, 0.1);
+            border: 1px solid rgba(255, 107, 107, 0.3);
+            border-radius: 5px;
+            display: none;
+        }
+        
+        @media (max-width: 768px) {
+            .info-panel {
+                grid-template-columns: 1fr;
+            }
+            
+            .controls {
+                flex-wrap: wrap;
+            }
+            
+            button {
+                min-width: 120px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Organic Typography</h1>
+        <div class="description">
+            読む身体・時間・歴史が織りなす自己リフレクティブな言語読解体験<br>
+            視覚的連結と語義的連結の干渉パターンが生成する意味のシステムアート
+        </div>
+        
+        <div class="status" id="status">システム初期化中...</div>
+        <div class="error" id="error"></div>
+        
+        <div class="canvas-container" id="canvas-container">
+            <div class="loading" id="loading">🧠 意識をシミュレーション中...</div>
+        </div>
+        
+        <div class="controls">
+            <button id="start-btn" disabled>開始</button>
+            <button id="pause-btn" disabled>一時停止</button>
+            <button id="reset-btn" disabled>リセット</button>
+            <button id="report-btn" disabled>レポート表示</button>
+        </div>
+        
+        <div class="info-panel">
+            <div class="info-section">
+                <h3>システム状態</h3>
+                <div class="metrics" id="system-metrics">
+                    初期化待機中...
+                </div>
+            </div>
+            
+            <div class="info-section">
+                <h3>認知プロセス</h3>
+                <div class="metrics" id="cognitive-metrics">
+                    初期化待機中...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- システムファイルの読み込み -->
+    <script src="js/SpatialIndex.js"></script>
+    <script src="js/SemanticField.js"></script>
+    <script src="js/TemporalContext.js"></script>
+    <script src="js/OrganicLayout.js"></script>
+    <script src="js/MetaCognitiveOrchestrator.js"></script>
+    <script src="js/index.js"></script>
+
+    <script>
+        // グローバル変数
+        let systemDemo = null;
+        let reportInterval = null;
+        
+        // DOM要素
+        const statusEl = document.getElementById('status');
+        const errorEl = document.getElementById('error');
+        const loadingEl = document.getElementById('loading');
+        const startBtn = document.getElementById('start-btn');
+        const pauseBtn = document.getElementById('pause-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const reportBtn = document.getElementById('report-btn');
+        const systemMetricsEl = document.getElementById('system-metrics');
+        const cognitiveMetricsEl = document.getElementById('cognitive-metrics');
+        
+        // 状態管理
+        let isRunning = false;
+        
+        // エラー表示関数
+        function showError(message) {
+            errorEl.textContent = message;
+            errorEl.style.display = 'block';
+            console.error('System Error:', message);
+        }
+        
+        // エラー非表示関数
+        function hideError() {
+            errorEl.style.display = 'none';
+        }
+        
+        // ステータス更新関数
+        function updateStatus(message) {
+            statusEl.textContent = message;
+            console.log('Status:', message);
+        }
+        
+        // システムメトリクス更新関数
+        function updateMetrics() {
+            if (!systemDemo) return;
+            
+            try {
+                const report = systemDemo.getReport();
+                
+                if (report) {
+                    // 基本メトリクス
+                    let systemText = '';
+                    if (report.basicMetrics) {
+                        systemText += `ノード数: ${report.basicMetrics.nodes || 0}\n`;
+                        systemText += `接続数: ${report.basicMetrics.connections || 0}\n`;
+                        systemText += `世代: ${report.basicMetrics.generation || 0}\n`;
+                    }
+                    
+                    if (report.semanticMetrics) {
+                        systemText += `語義密度: ${(report.semanticMetrics.semanticDensity || 0).toFixed(3)}\n`;
+                        systemText += `平均共鳴: ${(report.semanticMetrics.averageResonance || 0).toFixed(3)}\n`;
+                    }
+                    
+                    systemMetricsEl.textContent = systemText;
+                    
+                    // 認知メトリクス
+                    let cognitiveText = '';
+                    if (report.metacognitiveMetrics) {
+                        cognitiveText += `認知サイクル: ${report.metacognitiveMetrics.cognitiveCycles || 0}\n`;
+                        cognitiveText += `意識レベル: ${(report.metacognitiveMetrics.consciousnessLevel || 0).toFixed(3)}\n`;
+                        cognitiveText += `リフレクション深度: ${report.metacognitiveMetrics.selfReflectionDepth || 0}\n`;
+                    }
+                    
+                    if (report.emergentMetrics) {
+                        cognitiveText += `創発パターン: ${report.emergentMetrics.patterns || 0}\n`;
+                        cognitiveText += `洞察数: ${report.emergentMetrics.insights || 0}\n`;
+                        cognitiveText += `啓示数: ${report.emergentMetrics.revelations || 0}\n`;
+                    }
+                    
+                    cognitiveMetricsEl.textContent = cognitiveText;
+                } else {
+                    systemMetricsEl.textContent = 'レポート取得エラー';
+                    cognitiveMetricsEl.textContent = 'レポート取得エラー';
+                }
+            } catch (error) {
+                console.warn('Metrics update error:', error);
+                systemMetricsEl.textContent = 'メトリクス更新エラー';
+                cognitiveMetricsEl.textContent = 'メトリクス更新エラー';
+            }
+        }
+        
+        // イベントハンドラー
+        startBtn.addEventListener('click', () => {
+            if (systemDemo && !isRunning) {
+                try {
+                    systemDemo.start();
+                    isRunning = true;
+                    startBtn.disabled = true;
+                    pauseBtn.disabled = false;
+                    updateStatus('システム実行中 - 語義的引力場が生成されています...');
+                    
+                    // メトリクス更新の開始
+                    reportInterval = setInterval(updateMetrics, 1000);
+                } catch (error) {
+                    showError('システム開始エラー: ' + error.message);
+                }
+            }
+        });
+        
+        pauseBtn.addEventListener('click', () => {
+            if (systemDemo && isRunning) {
+                try {
+                    systemDemo.pause();
+                    isRunning = false;
+                    startBtn.disabled = false;
+                    pauseBtn.disabled = true;
+                    updateStatus('システム一時停止中');
+                    
+                    // メトリクス更新の停止
+                    if (reportInterval) {
+                        clearInterval(reportInterval);
+                        reportInterval = null;
+                    }
+                } catch (error) {
+                    showError('システム一時停止エラー: ' + error.message);
+                }
+            }
+        });
+        
+        resetBtn.addEventListener('click', () => {
+            if (systemDemo) {
+                try {
+                    systemDemo.reset();
+                    isRunning = false;
+                    startBtn.disabled = false;
+                    pauseBtn.disabled = true;
+                    updateStatus('システムリセット完了');
+                    
+                    // メトリクス更新の停止
+                    if (reportInterval) {
+                        clearInterval(reportInterval);
+                        reportInterval = null;
+                    }
+                    
+                    // メトリクスをリセット
+                    systemMetricsEl.textContent = 'ノード数: 0\n接続数: 0\n世代: 0';
+                    cognitiveMetricsEl.textContent = '認知サイクル: 0\n意識レベル: 0.000\nリフレクション深度: 0';
+                } catch (error) {
+                    showError('システムリセットエラー: ' + error.message);
+                }
+            }
+        });
+        
+        reportBtn.addEventListener('click', () => {
+            if (systemDemo) {
+                try {
+                    const report = systemDemo.getReport();
+                    const archive = systemDemo.getArchive();
+                    
+                    // レポートをJSON形式でコンソールに出力
+                    console.log('=== システムレポート ===');
+                    console.log(JSON.stringify(report, null, 2));
+                    
+                    if (archive) {
+                        console.log('=== 読解体験アーカイブ ===');
+                        console.log(JSON.stringify(archive, null, 2));
+                    }
+                    
+                    // 簡易レポート表示
+                    alert('詳細レポートがコンソールに出力されました。開発者ツールをご確認ください。');
+                } catch (error) {
+                    showError('レポート生成エラー: ' + error.message);
+                }
+            }
+        });
+        
+        // システム初期化
+        async function initializeSystem() {
+            try {
+                hideError();
+                updateStatus('システム初期化中...');
+                loadingEl.style.display = 'block';
+                
+                // デモテキスト
+                const demoText = "言語を読むとは何か。読む身体が時間と歴史を折り畳みながら、意味の枝を探索する。視覚と語義の干渉パターンが自己言及的な読解体験を生成する。";
+                
+                // 設定
+                const config = {
+                    metaCognitiveDepth: 0.8,
+                    selfReflectionFrequency: 15,
+                    consciousnessThreshold: 0.7,
+                    phenomenologicalSensitivity: 0.9,
+                    recursiveDepth: 3
+                };
+                
+                // システムデモの作成
+                if (typeof OrganicTypography !== 'undefined' && OrganicTypography.createDemo) {
+                    systemDemo = await OrganicTypography.createDemo('canvas-container', demoText, config);
+                    
+                    loadingEl.style.display = 'none';
+                    updateStatus('システム初期化完了 - 開始ボタンを押してください');
+                    
+                    // ボタンを有効化
+                    startBtn.disabled = false;
+                    resetBtn.disabled = false;
+                    reportBtn.disabled = false;
+                    
+                    // 初期メトリクス表示
+                    updateMetrics();
+                    
+                } else {
+                    throw new Error('OrganicTypography システムが利用できません');
+                }
+                
+            } catch (error) {
+                loadingEl.style.display = 'none';
+                updateStatus('システム初期化失敗');
+                showError('初期化エラー: ' + error.message);
+                console.error('Initialization error:', error);
+            }
+        }
+        
+        // ページ読み込み時の初期化
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(initializeSystem, 500); // 少し遅延させてすべてのスクリプトが読み込まれるのを待つ
+        });
+        
+        // ウィンドウクローズ時のクリーンアップ
+        window.addEventListener('beforeunload', () => {
+            if (reportInterval) {
+                clearInterval(reportInterval);
+            }
+            if (systemDemo && isRunning) {
+                systemDemo.pause();
+            }
+        });
+    </script>
+</body>
+</html>
